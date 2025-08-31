@@ -99,7 +99,7 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
             current_digits_set = set(final_digits)
             
             for digit in all_possible_digits:
-                if len(final_digits) >= top_n:
+                if len(final_digits) >= n:
                     break
                 if digit not in current_digits_set:
                     final_digits.append(digit)
@@ -454,64 +454,57 @@ with st.sidebar:
 col1, col2 = st.columns([1, 4])
 with col1:
     # =======================================================================
-    # >>>>> BLOK KODE YANG DIUBAH MULAI DARI SINI <<<<<
+    # >>>>> BLOK KODE YANG TELAH DIPERBAIKI <<<<<
     # =======================================================================
     
     # URL API target
     API_URL = "https://server.scanangka.fun/" 
 
     # Mapping nama pasaran dari UI ke nama yang mungkin digunakan di API
-    # Sesuaikan 'value' jika API menggunakan nama yang berbeda
     PASARAN_MAP = {
         "BULLSEYE": "bullseye",
         "HONGKONG": "hongkong",
         "SYDNEY": "sydney",
         "SINGAPORE": "singapore"
-        # Tambahkan pasaran lain di sini jika ada
     }
 
     if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
-        # Dapatkan nama pasaran untuk API dari mapping
         api_pasaran = PASARAN_MAP.get(selected_lokasi, selected_lokasi.lower())
-
-        # Siapkan parameter untuk dikirim ke API.
-        # Nama parameter 'pasaran' dan 'total' adalah tebakan.
-        # Mungkin perlu disesuaikan (misal: 'market' dan 'limit').
-        params = {
-            'pasaran': api_pasaran,
-            'total': putaran
-        }
+        params = {'pasaran': api_pasaran, 'total': putaran}
 
         try:
-            with st.spinner(f"Mengambil data dari server untuk {selected_lokasi}..."):
-                # Lakukan request ke API dengan timeout 15 detik
+            with st.spinner(f"Menghubungi server untuk {selected_lokasi}..."):
                 response = requests.get(API_URL, params=params, timeout=15)
-                
-                # Cek jika request gagal (misal: status code 404 atau 500)
-                response.raise_for_status() 
+                # Langkah 1: Cek status HTTP. Jika error (4xx atau 5xx), langsung hentikan.
+                response.raise_for_status()
 
-                # Ambil data JSON dari respons. 
-                # Berasumsi API mengembalikan list angka dalam format JSON
-                angka_from_api = response.json() 
-
-                if isinstance(angka_from_api, list) and angka_from_api:
-                    # Pastikan semua data adalah string 4 digit
-                    st.session_state.angka_list = [str(angka).zfill(4) for angka in angka_from_api]
-                    st.success(f"{len(st.session_state.angka_list)} data terakhir untuk {selected_lokasi} berhasil diambil.")
-                    st.rerun() # Muat ulang aplikasi untuk update text_area
+                # Langkah 2: Periksa apakah respons memiliki konten sebelum mencoba parsing JSON
+                if not response.text.strip():
+                    st.error("Server memberikan respons kosong. Coba lagi nanti atau periksa parameter.")
                 else:
-                    st.warning(f"API tidak mengembalikan data yang valid untuk {selected_lokasi}.")
+                    # Langkah 3: Baru coba parsing JSON
+                    angka_from_api = response.json()
+                    if isinstance(angka_from_api, list) and angka_from_api:
+                        st.session_state.angka_list = [str(angka).zfill(4) for angka in angka_from_api]
+                        st.success(f"{len(st.session_state.angka_list)} data terakhir untuk {selected_lokasi} berhasil diambil.")
+                        st.rerun()
+                    else:
+                        st.warning(f"Server tidak mengembalikan data yang valid untuk {selected_lokasi}. Respons: {angka_from_api}")
 
+        except requests.exceptions.HTTPError as e:
+            # Error spesifik untuk status code 4xx/5xx
+            st.error(f"Server mengembalikan error HTTP: {e}. Mungkin parameter atau URL salah.")
+            st.info(f"Detail respons dari server: {response.text}")
+        
         except requests.exceptions.RequestException as e:
+            # Error koneksi
             st.error(f"Gagal terhubung ke server: {e}")
+        
         except ValueError:
-            # Terjadi jika response.json() gagal (respons bukan JSON)
-            st.error("Gagal mem-parsing respons dari server. Server mungkin sedang down atau format data berubah.")
-        except Exception as e:
-            st.error(f"Terjadi kesalahan tak terduga: {e}")
-    # =======================================================================
-    # >>>>> BLOK KODE YANG DIUBAH BERAKHIR DI SINI <<<<<
-    # =======================================================================
+            # Error ini terjadi jika response.text bukan JSON valid
+            st.error("Gagal mem-parsing data dari server karena bukan format JSON yang valid.")
+            # Tampilkan apa yang sebenarnya dikirim oleh server untuk debugging
+            st.code(f"Isi Respons Server:\n\n{response.text}", language="text")
 
 with col2: st.caption("Data angka dari server akan digunakan untuk pelatihan dan prediksi.")
 
