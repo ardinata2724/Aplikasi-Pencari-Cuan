@@ -21,8 +21,8 @@ from datetime import datetime
 
 # ==============================================================================
 # BAGIAN 1: DEFINISI SEMUA FUNGSI-FUNGSI INTI
+# (Tidak ada perubahan di bagian ini)
 # ==============================================================================
-# (Semua fungsi inti dari file asli Anda tetap di sini, tidak ada perubahan)
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
 JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
@@ -431,8 +431,6 @@ if "angka_list" not in st.session_state: st.session_state.angka_list = []
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
-    # Menghapus pilihan hari karena tidak relevan lagi untuk file lokal
-    # selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
     putaran = st.number_input("🔁 Jumlah Putaran Terakhir", 10, 1000, 100)
     st.markdown("---")
     st.markdown("### 🎯 Opsi Prediksi")
@@ -455,47 +453,72 @@ with st.sidebar:
 
 col1, col2 = st.columns([1, 4])
 with col1:
+    # =======================================================================
+    # >>>>> BLOK KODE YANG DIUBAH MULAI DARI SINI <<<<<
+    # =======================================================================
+    
+    # URL API target
+    API_URL = "https://server.scanangka.fun/" 
+
+    # Mapping nama pasaran dari UI ke nama yang mungkin digunakan di API
+    # Sesuaikan 'value' jika API menggunakan nama yang berbeda
+    PASARAN_MAP = {
+        "BULLSEYE": "bullseye",
+        "HONGKONG": "hongkong",
+        "SYDNEY": "sydney",
+        "SINGAPORE": "singapore"
+        # Tambahkan pasaran lain di sini jika ada
+    }
+
     if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
-        # Membuat nama file berdasarkan pasaran yang dipilih
-        # Contoh: "BULLSEYE" -> "keluaran bullseye.txt"
-        file_name = f"keluaran {selected_lokasi.lower()}.txt"
+        # Dapatkan nama pasaran untuk API dari mapping
+        api_pasaran = PASARAN_MAP.get(selected_lokasi, selected_lokasi.lower())
+
+        # Siapkan parameter untuk dikirim ke API.
+        # Nama parameter 'pasaran' dan 'total' adalah tebakan.
+        # Mungkin perlu disesuaikan (misal: 'market' dan 'limit').
+        params = {
+            'pasaran': api_pasaran,
+            'total': putaran
+        }
+
         try:
-            with st.spinner(f"Membaca file {file_name}..."):
-                with open(file_name, 'r') as f:
-                    # Membaca semua baris dari file
-                    lines = f.readlines()
+            with st.spinner(f"Mengambil data dari server untuk {selected_lokasi}..."):
+                # Lakukan request ke API dengan timeout 15 detik
+                response = requests.get(API_URL, params=params, timeout=15)
                 
-                # Mengambil N baris terakhir sesuai input 'putaran'
-                # dan memastikannya terurut dari yang terlama ke terbaru
-                last_n_lines = lines[-putaran:]
-                
-                angka_from_file = []
-                for line in last_n_lines:
-                    # Membersihkan setiap baris: hapus spasi, ambil 4 digit pertama
-                    cleaned_line = line.strip()
-                    if cleaned_line and len(cleaned_line) >= 4 and cleaned_line[:4].isdigit():
-                        angka_from_file.append(cleaned_line[:4])
-                
-                if angka_from_file:
-                    st.session_state.angka_list = angka_from_file
-                    # --- PERUBAHAN DI SINI ---
-                    st.success(f"{len(angka_from_file)} dari {putaran} putaran terakhir berhasil diambil.")
-                    # Menjalankan ulang script agar text_area terupdate
-                    st.rerun() 
+                # Cek jika request gagal (misal: status code 404 atau 500)
+                response.raise_for_status() 
+
+                # Ambil data JSON dari respons. 
+                # Berasumsi API mengembalikan list angka dalam format JSON
+                angka_from_api = response.json() 
+
+                if isinstance(angka_from_api, list) and angka_from_api:
+                    # Pastikan semua data adalah string 4 digit
+                    st.session_state.angka_list = [str(angka).zfill(4) for angka in angka_from_api]
+                    st.success(f"{len(st.session_state.angka_list)} data terakhir untuk {selected_lokasi} berhasil diambil.")
+                    st.rerun() # Muat ulang aplikasi untuk update text_area
                 else:
-                    st.warning(f"Tidak ada data angka 4 digit yang valid ditemukan di {file_name}.")
+                    st.warning(f"API tidak mengembalikan data yang valid untuk {selected_lokasi}.")
 
-        except FileNotFoundError:
-            st.error(f"File tidak ditemukan: '{file_name}'. Pastikan file ada di folder yang sama dengan app.py.")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Gagal terhubung ke server: {e}")
+        except ValueError:
+            # Terjadi jika response.json() gagal (respons bukan JSON)
+            st.error("Gagal mem-parsing respons dari server. Server mungkin sedang down atau format data berubah.")
         except Exception as e:
-            st.error(f"Terjadi kesalahan saat membaca file: {e}")
+            st.error(f"Terjadi kesalahan tak terduga: {e}")
+    # =======================================================================
+    # >>>>> BLOK KODE YANG DIUBAH BERAKHIR DI SINI <<<<<
+    # =======================================================================
 
-with col2: st.caption("Data angka dari file lokal akan digunakan untuk pelatihan dan prediksi.")
+with col2: st.caption("Data angka dari server akan digunakan untuk pelatihan dan prediksi.")
+
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.get("angka_list", []))
     riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250, key="manual_data_input")
     
-    # Logika ini akan berjalan jika pengguna mengubah teks secara manual
     if riwayat_text != riwayat_input:
         new_angka_list = []
         for line in riwayat_text.splitlines():
@@ -508,7 +531,6 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
         st.rerun()
 
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
-
 
 # --- Definisi Tab (Tidak ada perubahan di sini) ---
 tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs([
@@ -594,7 +616,6 @@ with tab_scan:
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
         if columns.button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
-            # --- KODE DIKEMBALIKAN KE VERSI INI ---
             if len(df) < max_ws + 10: 
                 st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
             else:
