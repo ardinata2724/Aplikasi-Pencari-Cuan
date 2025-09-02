@@ -10,16 +10,6 @@ from datetime import datetime, timedelta
 import json
 import uuid
 
-# --- CSS UNTUK MENGHILANGKAN TOOLBAR/HEADER BAWAAN STREAMLIT ---
-hide_streamlit_style = """
-<style>
-header {visibility: hidden;}
-</style>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-# --- BATAS KODE CSS ---
-
-
 # ==============================================================================
 # KONFIGURASI & FUNGSI PASSWORD
 # ==============================================================================
