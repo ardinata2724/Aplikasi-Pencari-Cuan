@@ -6,7 +6,7 @@ import random
 import numpy as np
 from collections import defaultdict, Counter
 from itertools import product
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import uuid
 
@@ -15,60 +15,73 @@ import uuid
 # ==============================================================================
 
 # --- PENTING: Tentukan password admin Anda di sini ---
-# Pastikan password ini juga ada di dalam file passwords.json Anda
 ADMIN_PASSWORD = "PASS_RAHASIA_01" 
+# --- Tentukan durasi timeout dalam menit ---
+SESSION_TIMEOUT_MINUTES = 15
 
 PASSWORDS_FILE = "passwords.json"
 DEVICE_LOG_FILE = "device_log.json"
 
 def get_valid_passwords():
-    """Membaca daftar password yang valid dari file JSON."""
-    if not os.path.exists(PASSWORDS_FILE):
-        return []
-    with open(PASSWORDS_FILE, 'r') as f:
-        return json.load(f)
+    if not os.path.exists(PASSWORDS_FILE): return []
+    with open(PASSWORDS_FILE, 'r') as f: return json.load(f)
 
 def get_device_log():
-    """Membaca catatan perangkat yang sedang aktif."""
-    if not os.path.exists(DEVICE_LOG_FILE):
-        return {}
+    if not os.path.exists(DEVICE_LOG_FILE): return {}
     try:
-        with open(DEVICE_LOG_FILE, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        return {}
+        with open(DEVICE_LOG_FILE, 'r') as f: return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError): return {}
 
 def save_device_log(log_data):
-    """Menyimpan catatan perangkat yang aktif."""
-    with open(DEVICE_LOG_FILE, 'w') as f:
-        json.dump(log_data, f, indent=4)
+    with open(DEVICE_LOG_FILE, 'w') as f: json.dump(log_data, f, indent=4)
+
+def force_logout():
+    """Fungsi untuk melakukan logout paksa dan membersihkan sesi."""
+    device_log = get_device_log()
+    password_to_logout = None
+    
+    # Cari password yang terkait dengan sesi ini
+    for pwd, sid in device_log.items():
+        if sid == st.session_state.get('user_session_id'):
+            password_to_logout = pwd
+            break
+            
+    if password_to_logout and password_to_logout in device_log:
+        del device_log[password_to_logout]
+        save_device_log(device_log)
+
+    # Reset semua session state
+    st.session_state.logged_in = False
+    st.session_state.is_admin = False
+    st.session_state.user_session_id = None
+    st.session_state.last_activity_time = None
 
 def check_password_per_device():
-    """
-    Memeriksa password dan menguncinya ke satu sesi perangkat.
-    Mengembalikan True jika otorisasi berhasil.
-    """
-    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-    if 'is_admin' not in st.session_state: st.session_state.is_admin = False
-    if 'user_session_id' not in st.session_state: st.session_state.user_session_id = None
+    """Memeriksa password, sesi, dan timeout."""
+    # Inisialisasi state jika belum ada
+    for key, default in [('logged_in', False), ('is_admin', False), ('user_session_id', None), ('last_activity_time', None)]:
+        if key not in st.session_state: st.session_state[key] = default
 
+    # Cek Timeout jika sudah login
+    if st.session_state.logged_in and st.session_state.last_activity_time:
+        if datetime.now() - st.session_state.last_activity_time > timedelta(minutes=SESSION_TIMEOUT_MINUTES):
+            force_logout()
+            st.warning(f"Anda telah otomatis logout karena tidak aktif selama {SESSION_TIMEOUT_MINUTES} menit.")
+            time.sleep(2) # Beri jeda agar pesan terbaca
+            st.rerun()
+
+    # Cek sesi yang valid
     if st.session_state.logged_in:
         device_log = get_device_log()
-        password_found = None
-        for pwd, sid in device_log.items():
-            if sid == st.session_state.user_session_id:
-                password_found = pwd
-                break
-        
+        password_found = any(sid == st.session_state.user_session_id for sid in device_log.values())
         if password_found:
-            st.session_state.is_admin = (password_found == ADMIN_PASSWORD)
-            return True
+            return True # Langsung berikan akses jika sesi valid
         else:
-            st.session_state.logged_in = False
-            st.session_state.is_admin = False
-            st.session_state.user_session_id = None
-            st.warning("Sesi Anda tidak valid lagi. Silakan login kembali.")
+            force_logout() # Sesi tidak ditemukan di log, paksa logout
+            st.warning("Sesi Anda tidak valid. Silakan login kembali.")
+            st.rerun()
 
+    # Jika belum login, tampilkan form
     st.title("🔐 Login Aplikasi")
     password = st.text_input("Masukkan Password Anda", type="password", key="login_password_input")
 
@@ -88,14 +101,12 @@ def check_password_per_device():
                 st.session_state.user_session_id = session_id
                 st.session_state.logged_in = True
                 st.session_state.is_admin = (password == ADMIN_PASSWORD)
-                
                 device_log[password] = session_id
                 save_device_log(device_log)
                 st.rerun()
         else:
             st.error("😕 Password salah atau tidak terdaftar.")
             st.session_state.logged_in = False
-
     return False
 
 # ==============================================================================
@@ -246,6 +257,9 @@ st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
 if check_password_per_device():
 
+    # SETELAH LOGIN BERHASIL, UPDATE WAKTU AKTIVITAS TERAKHIR
+    st.session_state.last_activity_time = datetime.now()
+
     if 'angka_list' not in st.session_state: st.session_state.angka_list = []
     if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
     if 'scan_queue' not in st.session_state: st.session_state.scan_queue = []
@@ -260,35 +274,17 @@ if check_password_per_device():
         st.markdown("---"); st.markdown("### 🎯 Opsi Prediksi"); jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 9); jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
         metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"]); use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True); model_type = "transformer" if use_transformer else "lstm"
         st.markdown("---"); st.markdown("### 🪟 Window Size per Digit"); window_per_digit = {label: st.number_input(f"{label.upper()}", 1, 100, 7, key=f"win_{label}") for label in DIGIT_LABELS}
-
-        # --- TOMBOL LOGOUT DITAMBAHKAN DI SINI ---
+        
         st.markdown("---")
-        if st.button("Logout"):
-            device_log = get_device_log()
-            password_to_logout = None
-            
-            # Cari password mana yang terkait dengan sesi ini
-            for pwd, sid in device_log.items():
-                if sid == st.session_state.get('user_session_id'):
-                    password_to_logout = pwd
-                    break
-            
-            # Hapus entri dari log jika ditemukan
-            if password_to_logout and password_to_logout in device_log:
-                del device_log[password_to_logout]
-                save_device_log(device_log)
-
-            # Reset semua session state
-            st.session_state.logged_in = False
-            st.session_state.is_admin = False
-            st.session_state.user_session_id = None
+        if st.button("🚪 Logout"):
+            force_logout()
             st.success("Anda berhasil logout.")
             time.sleep(1)
             st.rerun()
 
     def get_file_name_from_lokasi(lokasi):
         cleaned_lokasi = lokasi.lower().replace(" ", "")
-        if "hongkonglotto" in cleaned_lokasi: return "keluaran hongkong lotto.txt"
+        if "hongkonglotto" in cleaned_lokasi: return "keluan hongkong lotto.txt"
         if "hongkongpools" in cleaned_lokasi: return "keluaran hongkongpools.txt"
         if "sydneylotto" in cleaned_lokasi: return "keluaran sydney lotto.txt"
         if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
