@@ -43,7 +43,6 @@ def save_device_log(log_data):
     with open(DEVICE_LOG_FILE, 'w') as f:
         json.dump(log_data, f, indent=4)
 
-# --- FUNGSI INI DIUBAH UNTUK MEMPERBAIKI LOGIKA REFRESH ---
 def check_password_per_device():
     """
     Memeriksa password dan menguncinya ke satu sesi perangkat.
@@ -78,17 +77,13 @@ def check_password_per_device():
         device_log = get_device_log()
 
         if password in valid_passwords:
-            # --- PERUBAHAN LOGIKA UTAMA ADA DI SINI ---
             if password in device_log:
-                # Password sudah aktif. Anggap ini adalah RE-LOGIN setelah refresh.
-                # Berikan kembali sesi yang sudah ada ke browser ini.
                 session_id = device_log[password]
                 st.session_state.user_session_id = session_id
                 st.session_state.logged_in = True
                 st.session_state.is_admin = (password == ADMIN_PASSWORD)
                 st.rerun()
             else:
-                # Password valid dan belum aktif. Ini adalah login pertama kali.
                 session_id = str(uuid.uuid4())
                 st.session_state.user_session_id = session_id
                 st.session_state.logged_in = True
@@ -266,6 +261,31 @@ if check_password_per_device():
         metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"]); use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True); model_type = "transformer" if use_transformer else "lstm"
         st.markdown("---"); st.markdown("### 🪟 Window Size per Digit"); window_per_digit = {label: st.number_input(f"{label.upper()}", 1, 100, 7, key=f"win_{label}") for label in DIGIT_LABELS}
 
+        # --- TOMBOL LOGOUT DITAMBAHKAN DI SINI ---
+        st.markdown("---")
+        if st.button("Logout"):
+            device_log = get_device_log()
+            password_to_logout = None
+            
+            # Cari password mana yang terkait dengan sesi ini
+            for pwd, sid in device_log.items():
+                if sid == st.session_state.get('user_session_id'):
+                    password_to_logout = pwd
+                    break
+            
+            # Hapus entri dari log jika ditemukan
+            if password_to_logout and password_to_logout in device_log:
+                del device_log[password_to_logout]
+                save_device_log(device_log)
+
+            # Reset semua session state
+            st.session_state.logged_in = False
+            st.session_state.is_admin = False
+            st.session_state.user_session_id = None
+            st.success("Anda berhasil logout.")
+            time.sleep(1)
+            st.rerun()
+
     def get_file_name_from_lokasi(lokasi):
         cleaned_lokasi = lokasi.lower().replace(" ", "")
         if "hongkonglotto" in cleaned_lokasi: return "keluaran hongkong lotto.txt"
@@ -394,7 +414,6 @@ if check_password_per_device():
             st.write("Di sini Anda bisa melihat semua password yang sedang aktif digunakan dan melakukan logout paksa jika diperlukan.")
             device_log = get_device_log()
             
-            # Buat daftar password non-admin yang aktif
             active_users = {p: s for p, s in device_log.items() if p != ADMIN_PASSWORD}
             
             if not active_users:
@@ -406,9 +425,6 @@ if check_password_per_device():
                     with col1: st.text(f"Password: '{password}' sedang digunakan.")
                     with col2:
                         if st.button(f"Logout Paksa", key=f"logout_{password}"):
-                            # Hapus entri dari log
-                            del device_log[password]
-                            save_device_log(device_log)
-                            st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
+                            del device_log[password]; save_device_log(device_log); st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
                             time.sleep(1); st.rerun()
                 st.markdown("---")
