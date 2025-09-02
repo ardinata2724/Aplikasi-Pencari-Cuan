@@ -16,7 +16,7 @@ import uuid
 
 # --- PENTING: Tentukan password admin Anda di sini ---
 # Pastikan password ini juga ada di dalam file passwords.json Anda
-ADMIN_PASSWORD = "PASS_RAHASIA_01" 
+ADMIN_PASSWORD = "Andi1991" 
 
 PASSWORDS_FILE = "passwords.json"
 DEVICE_LOG_FILE = "device_log.json"
