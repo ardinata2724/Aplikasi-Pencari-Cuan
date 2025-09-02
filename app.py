@@ -16,7 +16,7 @@ import uuid
 
 # --- PENTING: Tentukan password admin Anda di sini ---
 # Pastikan password ini juga ada di dalam file passwords.json Anda
-ADMIN_PASSWORD = "Andi1991" 
+ADMIN_PASSWORD = "PASS_RAHASIA_01" 
 
 PASSWORDS_FILE = "passwords.json"
 DEVICE_LOG_FILE = "device_log.json"
@@ -43,18 +43,41 @@ def save_device_log(log_data):
     with open(DEVICE_LOG_FILE, 'w') as f:
         json.dump(log_data, f, indent=4)
 
+# --- FUNGSI INI DIUBAH UNTUK MEMPERBAIKI TAMPILAN ---
 def check_password_per_device():
     """
     Memeriksa password dan menguncinya ke satu sesi perangkat.
     Mengembalikan True jika otorisasi berhasil.
     """
-    st.title("🔐 Login Aplikasi")
-
     # Inisialisasi session state jika belum ada
-    if 'user_session_id' not in st.session_state: st.session_state.user_session_id = None
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
     if 'is_admin' not in st.session_state: st.session_state.is_admin = False
-    
+    if 'user_session_id' not in st.session_state: st.session_state.user_session_id = None
+
+    # LANGKAH 1: Cek dulu apakah pengguna SUDAH login.
+    if st.session_state.logged_in:
+        # Verifikasi ulang bahwa sesinya masih valid di log
+        device_log = get_device_log()
+        password_found = None
+        for pwd, sid in device_log.items():
+            if sid == st.session_state.user_session_id:
+                password_found = pwd
+                break
+        
+        if password_found:
+            # Jika sesi valid, langsung berikan akses tanpa menampilkan form login
+            st.session_state.is_admin = (password_found == ADMIN_PASSWORD)
+            return True
+        else:
+            # Sesi tidak valid lagi (mungkin di-logout paksa), reset state dan tampilkan form login
+            st.session_state.logged_in = False
+            st.session_state.is_admin = False
+            st.session_state.user_session_id = None
+            st.warning("Sesi Anda tidak valid lagi. Silakan login kembali.")
+            # Biarkan kode berjalan ke bawah untuk menampilkan form login
+
+    # LANGKAH 2: Jika belum login, BARU tampilkan form login.
+    st.title("🔐 Login Aplikasi")
     password = st.text_input("Masukkan Password Anda", type="password", key="login_password_input")
 
     if st.button("Login"):
@@ -69,10 +92,7 @@ def check_password_per_device():
                 session_id = str(uuid.uuid4())
                 st.session_state.user_session_id = session_id
                 st.session_state.logged_in = True
-                
-                # Cek apakah ini login admin
-                if password == ADMIN_PASSWORD:
-                    st.session_state.is_admin = True
+                st.session_state.is_admin = (password == ADMIN_PASSWORD)
                 
                 device_log[password] = session_id
                 save_device_log(device_log)
@@ -81,29 +101,7 @@ def check_password_per_device():
             st.error("😕 Password salah atau tidak terdaftar.")
             st.session_state.logged_in = False
 
-    if st.session_state.logged_in:
-        device_log = get_device_log()
-        password_found = None
-        for pwd, sid in device_log.items():
-            if sid == st.session_state.user_session_id:
-                password_found = pwd
-                break
-        
-        if password_found:
-            # Pastikan status admin konsisten
-            if password_found == ADMIN_PASSWORD:
-                st.session_state.is_admin = True
-            else:
-                st.session_state.is_admin = False
-            return True
-        else:
-            st.session_state.logged_in = False
-            st.session_state.is_admin = False
-            st.warning("Sesi Anda tidak valid lagi. Silakan login kembali.")
-            return False
-    
     return False
-
 
 # ==============================================================================
 # BAGIAN 1: FUNGSI-FUNGSI INTI (Tidak ada perubahan di bagian ini)
@@ -252,7 +250,7 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
 st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
 if check_password_per_device():
-    # Inisialisasi state aplikasi utama HANYA setelah login berhasil
+
     if 'angka_list' not in st.session_state: st.session_state.angka_list = []
     if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
     if 'scan_queue' not in st.session_state: st.session_state.scan_queue = []
@@ -291,18 +289,13 @@ if check_password_per_device():
 
     df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
     
-    # Menyiapkan daftar tab, tambahkan tab Admin jika pengguna adalah admin
     tab_list = ["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"]
     if st.session_state.get("is_admin"):
         tab_list.append("👑 Admin")
     
     tabs = st.tabs(tab_list)
     
-    # Mapping tab ke variabel agar mudah dibaca
-    tab_scan = tabs[0]
-    tab_manajemen = tabs[1]
-    tab_angka_main = tabs[2]
-    tab_prediksi = tabs[3]
+    tab_scan = tabs[0]; tab_manajemen = tabs[1]; tab_angka_main = tabs[2]; tab_prediksi = tabs[3]
     if st.session_state.get("is_admin"):
         tab_admin = tabs[4]
 
@@ -395,32 +388,22 @@ if check_password_per_device():
                 st.markdown("##### Statistik Lainnya"); stats = calculate_angka_main_stats(df, jumlah_digit); st.markdown(f"**Jumlah 2D (Belakang):**"); st.code(stats['jumlah_2d']); st.markdown(f"**Colok Bebas:**"); st.code(stats['colok_bebas'])
         else: st.warning("Data historis tidak cukup (minimal 10 baris).")
 
-    # Logika untuk Tab Admin, hanya ditampilkan jika pengguna adalah admin
     if st.session_state.get("is_admin"):
         with tab_admin:
             st.subheader("👑 Panel Manajemen Sesi")
             st.write("Di sini Anda bisa melihat semua password yang sedang aktif digunakan dan melakukan logout paksa jika diperlukan.")
-            
             device_log = get_device_log()
-            
-            if not device_log:
-                st.success("✅ Tidak ada sesi pengguna yang sedang aktif.")
+            if not device_log or all(p == ADMIN_PASSWORD for p in device_log):
+                st.success("✅ Tidak ada sesi pengguna (non-admin) yang sedang aktif.")
             else:
                 st.markdown("---")
-                for password, session_id in device_log.items():
-                    # Jangan tampilkan sesi admin itu sendiri
-                    if password == ADMIN_PASSWORD:
-                        continue
-                    
+                # Buat salinan untuk diiterasi agar bisa menghapus dari log asli
+                for password, session_id in list(device_log.items()):
+                    if password == ADMIN_PASSWORD: continue
                     col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.text(f"Password: '{password}' sedang digunakan.")
+                    with col1: st.text(f"Password: '{password}' sedang digunakan.")
                     with col2:
                         if st.button(f"Logout Paksa", key=f"logout_{password}"):
-                            # Hapus entri dari log
-                            del device_log[password]
-                            save_device_log(device_log)
-                            st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
-                            time.sleep(1)
-                            st.rerun()
+                            del device_log[password]; save_device_log(device_log); st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
+                            time.sleep(1); st.rerun()
                 st.markdown("---")
