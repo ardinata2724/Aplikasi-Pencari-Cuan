@@ -43,20 +43,17 @@ def save_device_log(log_data):
     with open(DEVICE_LOG_FILE, 'w') as f:
         json.dump(log_data, f, indent=4)
 
-# --- FUNGSI INI DIUBAH UNTUK MEMPERBAIKI TAMPILAN ---
+# --- FUNGSI INI DIUBAH UNTUK MEMPERBAIKI LOGIKA REFRESH ---
 def check_password_per_device():
     """
     Memeriksa password dan menguncinya ke satu sesi perangkat.
     Mengembalikan True jika otorisasi berhasil.
     """
-    # Inisialisasi session state jika belum ada
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
     if 'is_admin' not in st.session_state: st.session_state.is_admin = False
     if 'user_session_id' not in st.session_state: st.session_state.user_session_id = None
 
-    # LANGKAH 1: Cek dulu apakah pengguna SUDAH login.
     if st.session_state.logged_in:
-        # Verifikasi ulang bahwa sesinya masih valid di log
         device_log = get_device_log()
         password_found = None
         for pwd, sid in device_log.items():
@@ -65,18 +62,14 @@ def check_password_per_device():
                 break
         
         if password_found:
-            # Jika sesi valid, langsung berikan akses tanpa menampilkan form login
             st.session_state.is_admin = (password_found == ADMIN_PASSWORD)
             return True
         else:
-            # Sesi tidak valid lagi (mungkin di-logout paksa), reset state dan tampilkan form login
             st.session_state.logged_in = False
             st.session_state.is_admin = False
             st.session_state.user_session_id = None
             st.warning("Sesi Anda tidak valid lagi. Silakan login kembali.")
-            # Biarkan kode berjalan ke bawah untuk menampilkan form login
 
-    # LANGKAH 2: Jika belum login, BARU tampilkan form login.
     st.title("🔐 Login Aplikasi")
     password = st.text_input("Masukkan Password Anda", type="password", key="login_password_input")
 
@@ -85,10 +78,17 @@ def check_password_per_device():
         device_log = get_device_log()
 
         if password in valid_passwords:
+            # --- PERUBAHAN LOGIKA UTAMA ADA DI SINI ---
             if password in device_log:
-                st.error("🔒 Password ini sedang digunakan di perangkat lain. Tidak bisa login.")
-                st.session_state.logged_in = False
+                # Password sudah aktif. Anggap ini adalah RE-LOGIN setelah refresh.
+                # Berikan kembali sesi yang sudah ada ke browser ini.
+                session_id = device_log[password]
+                st.session_state.user_session_id = session_id
+                st.session_state.logged_in = True
+                st.session_state.is_admin = (password == ADMIN_PASSWORD)
+                st.rerun()
             else:
+                # Password valid dan belum aktif. Ini adalah login pertama kali.
                 session_id = str(uuid.uuid4())
                 st.session_state.user_session_id = session_id
                 st.session_state.logged_in = True
@@ -393,17 +393,22 @@ if check_password_per_device():
             st.subheader("👑 Panel Manajemen Sesi")
             st.write("Di sini Anda bisa melihat semua password yang sedang aktif digunakan dan melakukan logout paksa jika diperlukan.")
             device_log = get_device_log()
-            if not device_log or all(p == ADMIN_PASSWORD for p in device_log):
+            
+            # Buat daftar password non-admin yang aktif
+            active_users = {p: s for p, s in device_log.items() if p != ADMIN_PASSWORD}
+            
+            if not active_users:
                 st.success("✅ Tidak ada sesi pengguna (non-admin) yang sedang aktif.")
             else:
                 st.markdown("---")
-                # Buat salinan untuk diiterasi agar bisa menghapus dari log asli
-                for password, session_id in list(device_log.items()):
-                    if password == ADMIN_PASSWORD: continue
+                for password, session_id in active_users.items():
                     col1, col2 = st.columns([3, 1])
                     with col1: st.text(f"Password: '{password}' sedang digunakan.")
                     with col2:
                         if st.button(f"Logout Paksa", key=f"logout_{password}"):
-                            del device_log[password]; save_device_log(device_log); st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
+                            # Hapus entri dari log
+                            del device_log[password]
+                            save_device_log(device_log)
+                            st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
                             time.sleep(1); st.rerun()
                 st.markdown("---")
