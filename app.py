@@ -15,7 +15,7 @@ import uuid
 # ==============================================================================
 
 # --- PENTING: Tentukan password admin Anda di sini ---
-ADMIN_PASSWORD = "admin1991" 
+ADMIN_PASSWORD = "Andi1991" 
 # --- Tentukan durasi timeout dalam menit ---
 SESSION_TIMEOUT_MINUTES = 15
 
