@@ -40,7 +40,6 @@ def force_logout():
     device_log = get_device_log()
     password_to_logout = None
     
-    # Cari password yang terkait dengan sesi ini
     for pwd, sid in device_log.items():
         if sid == st.session_state.get('user_session_id'):
             password_to_logout = pwd
@@ -50,42 +49,38 @@ def force_logout():
         del device_log[password_to_logout]
         save_device_log(device_log)
 
-    # Reset semua session state
-    st.session_state.logged_in = False
-    st.session_state.is_admin = False
-    st.session_state.user_session_id = None
-    st.session_state.last_activity_time = None
+    for key in ['logged_in', 'is_admin', 'user_session_id', 'last_activity_time']:
+        if key in st.session_state:
+            del st.session_state[key]
 
+# --- FUNGSI INI DIUBAH UNTUK MENGGUNAKAN st.form ---
 def check_password_per_device():
     """Memeriksa password, sesi, dan timeout."""
-    # Inisialisasi state jika belum ada
     for key, default in [('logged_in', False), ('is_admin', False), ('user_session_id', None), ('last_activity_time', None)]:
         if key not in st.session_state: st.session_state[key] = default
 
-    # Cek Timeout jika sudah login
     if st.session_state.logged_in and st.session_state.last_activity_time:
         if datetime.now() - st.session_state.last_activity_time > timedelta(minutes=SESSION_TIMEOUT_MINUTES):
             force_logout()
             st.warning(f"Anda telah otomatis logout karena tidak aktif selama {SESSION_TIMEOUT_MINUTES} menit.")
-            time.sleep(2) # Beri jeda agar pesan terbaca
-            st.rerun()
+            time.sleep(2); st.rerun()
 
-    # Cek sesi yang valid
     if st.session_state.logged_in:
         device_log = get_device_log()
         password_found = any(sid == st.session_state.user_session_id for sid in device_log.values())
         if password_found:
-            return True # Langsung berikan akses jika sesi valid
+            return True
         else:
-            force_logout() # Sesi tidak ditemukan di log, paksa logout
-            st.warning("Sesi Anda tidak valid. Silakan login kembali.")
-            st.rerun()
+            force_logout(); st.warning("Sesi Anda tidak valid. Silakan login kembali."); st.rerun()
 
-    # Jika belum login, tampilkan form
     st.title("🔐 Login Aplikasi")
-    password = st.text_input("Masukkan Password Anda", type="password", key="login_password_input")
+    
+    # --- PERUBAHAN DIMULAI DI SINI ---
+    with st.form(key="login_form"):
+        password = st.text_input("Masukkan Password Anda", type="password")
+        login_button = st.form_submit_button("Login")
 
-    if st.button("Login"):
+    if login_button:
         valid_passwords = get_valid_passwords()
         device_log = get_device_log()
 
@@ -107,6 +102,8 @@ def check_password_per_device():
         else:
             st.error("😕 Password salah atau tidak terdaftar.")
             st.session_state.logged_in = False
+    # --- PERUBAHAN SELESAI DI SINI ---
+            
     return False
 
 # ==============================================================================
@@ -257,7 +254,6 @@ st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
 if check_password_per_device():
 
-    # SETELAH LOGIN BERHASIL, UPDATE WAKTU AKTIVITAS TERAKHIR
     st.session_state.last_activity_time = datetime.now()
 
     if 'angka_list' not in st.session_state: st.session_state.angka_list = []
@@ -277,14 +273,11 @@ if check_password_per_device():
         
         st.markdown("---")
         if st.button("🚪 Logout"):
-            force_logout()
-            st.success("Anda berhasil logout.")
-            time.sleep(1)
-            st.rerun()
+            force_logout(); st.success("Anda berhasil logout."); time.sleep(1); st.rerun()
 
     def get_file_name_from_lokasi(lokasi):
         cleaned_lokasi = lokasi.lower().replace(" ", "")
-        if "hongkonglotto" in cleaned_lokasi: return "keluan hongkong lotto.txt"
+        if "hongkonglotto" in cleaned_lokasi: return "keluaran hongkong lotto.txt"
         if "hongkongpools" in cleaned_lokasi: return "keluaran hongkongpools.txt"
         if "sydneylotto" in cleaned_lokasi: return "keluaran sydney lotto.txt"
         if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
