@@ -10,6 +10,16 @@ from datetime import datetime, timedelta
 import json
 import uuid
 
+# --- CSS UNTUK MENGHILANGKAN TOOLBAR/HEADER BAWAAN STREAMLIT ---
+hide_streamlit_style = """
+<style>
+header {visibility: hidden;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# --- BATAS KODE CSS ---
+
+
 # ==============================================================================
 # KONFIGURASI & FUNGSI PASSWORD
 # ==============================================================================
@@ -53,7 +63,6 @@ def force_logout():
         if key in st.session_state:
             del st.session_state[key]
 
-# --- FUNGSI INI DIUBAH UNTUK MENGGUNAKAN st.form ---
 def check_password_per_device():
     """Memeriksa password, sesi, dan timeout."""
     for key, default in [('logged_in', False), ('is_admin', False), ('user_session_id', None), ('last_activity_time', None)]:
@@ -75,7 +84,6 @@ def check_password_per_device():
 
     st.title("🔐 Login Aplikasi")
     
-    # --- PERUBAHAN DIMULAI DI SINI ---
     with st.form(key="login_form"):
         password = st.text_input("Masukkan Password Anda", type="password")
         login_button = st.form_submit_button("Login")
@@ -102,7 +110,6 @@ def check_password_per_device():
         else:
             st.error("😕 Password salah atau tidak terdaftar.")
             st.session_state.logged_in = False
-    # --- PERUBAHAN SELESAI DI SINI ---
             
     return False
 
