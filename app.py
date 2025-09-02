@@ -11,8 +11,12 @@ import json
 import uuid
 
 # ==============================================================================
-# FUNGSI UNTUK PROTEKSI PASSWORD PER PERANGKAT
+# KONFIGURASI & FUNGSI PASSWORD
 # ==============================================================================
+
+# --- PENTING: Tentukan password admin Anda di sini ---
+# Pastikan password ini juga ada di dalam file passwords.json Anda
+ADMIN_PASSWORD = "PASS_RAHASIA_01" 
 
 PASSWORDS_FILE = "passwords.json"
 DEVICE_LOG_FILE = "device_log.json"
@@ -28,8 +32,11 @@ def get_device_log():
     """Membaca catatan perangkat yang sedang aktif."""
     if not os.path.exists(DEVICE_LOG_FILE):
         return {}
-    with open(DEVICE_LOG_FILE, 'r') as f:
-        return json.load(f)
+    try:
+        with open(DEVICE_LOG_FILE, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
 
 def save_device_log(log_data):
     """Menyimpan catatan perangkat yang aktif."""
@@ -44,39 +51,37 @@ def check_password_per_device():
     st.title("🔐 Login Aplikasi")
 
     # Inisialisasi session state jika belum ada
-    if 'user_session_id' not in st.session_state:
-        st.session_state.user_session_id = None
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
+    if 'user_session_id' not in st.session_state: st.session_state.user_session_id = None
+    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+    if 'is_admin' not in st.session_state: st.session_state.is_admin = False
     
-    password = st.text_input("Masukkan Password Anda", type="password")
+    password = st.text_input("Masukkan Password Anda", type="password", key="login_password_input")
 
     if st.button("Login"):
         valid_passwords = get_valid_passwords()
         device_log = get_device_log()
 
         if password in valid_passwords:
-            # Cek apakah password sedang digunakan
             if password in device_log:
                 st.error("🔒 Password ini sedang digunakan di perangkat lain. Tidak bisa login.")
                 st.session_state.logged_in = False
             else:
-                # Password valid dan tidak sedang digunakan, berikan akses
-                session_id = str(uuid.uuid4()) # Buat "tiket digital" unik
+                session_id = str(uuid.uuid4())
                 st.session_state.user_session_id = session_id
                 st.session_state.logged_in = True
                 
-                # Catat ke "buku catatan"
+                # Cek apakah ini login admin
+                if password == ADMIN_PASSWORD:
+                    st.session_state.is_admin = True
+                
                 device_log[password] = session_id
                 save_device_log(device_log)
-                st.rerun() # Refresh halaman untuk masuk ke aplikasi
+                st.rerun()
         else:
             st.error("😕 Password salah atau tidak terdaftar.")
             st.session_state.logged_in = False
 
-    # Jika pengguna sudah login di sesi ini, biarkan dia tetap masuk
     if st.session_state.logged_in:
-        # Verifikasi ulang bahwa sesinya masih valid di log
         device_log = get_device_log()
         password_found = None
         for pwd, sid in device_log.items():
@@ -85,10 +90,15 @@ def check_password_per_device():
                 break
         
         if password_found:
+            # Pastikan status admin konsisten
+            if password_found == ADMIN_PASSWORD:
+                st.session_state.is_admin = True
+            else:
+                st.session_state.is_admin = False
             return True
         else:
-            # Sesi tidak valid lagi (mungkin dihapus manual), paksa logout
             st.session_state.logged_in = False
+            st.session_state.is_admin = False
             st.warning("Sesi Anda tidak valid lagi. Silakan login kembali.")
             return False
     
@@ -241,7 +251,6 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
 # ==============================================================================
 st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
-# Jalankan pengecekan password. Jika hasilnya True, tampilkan aplikasi utama.
 if check_password_per_device():
     # Inisialisasi state aplikasi utama HANYA setelah login berhasil
     if 'angka_list' not in st.session_state: st.session_state.angka_list = []
@@ -249,15 +258,12 @@ if check_password_per_device():
     if 'scan_queue' not in st.session_state: st.session_state.scan_queue = []
     if 'current_scan_job' not in st.session_state: st.session_state.current_scan_job = None
 
-    st.title("Prediksi 4D")
-    st.caption("editing by: Andi Prediction")
+    st.title("Prediksi 4D"); st.caption("editing by: Andi Prediction")
     try: from lokasi_list import lokasi_list
     except ImportError: lokasi_list = ["BULLSEYE", "HONGKONGPOOLS", "HONGKONG LOTTO", "SYDNEYPOOLS", "SYDNEY LOTTO", "SINGAPURA"]
     
     with st.sidebar:
-        st.header("⚙️ Pengaturan")
-        selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
-        putaran = st.number_input("🔁 Jumlah Putaran Terakhir", 10, 1000, 100)
+        st.header("⚙️ Pengaturan"); selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list); putaran = st.number_input("🔁 Jumlah Putaran Terakhir", 10, 1000, 100)
         st.markdown("---"); st.markdown("### 🎯 Opsi Prediksi"); jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 9); jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
         metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"]); use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True); model_type = "transformer" if use_transformer else "lstm"
         st.markdown("---"); st.markdown("### 🪟 Window Size per Digit"); window_per_digit = {label: st.number_input(f"{label.upper()}", 1, 100, 7, key=f"win_{label}") for label in DIGIT_LABELS}
@@ -275,8 +281,7 @@ if check_password_per_device():
         try:
             with open(file_path, 'r') as f: lines = f.readlines()
             angka_from_file = [line.strip()[:4] for line in lines[-putaran:] if line.strip() and line.strip()[:4].isdigit()]
-            if angka_from_file:
-                st.session_state.angka_list = angka_from_file; st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
+            if angka_from_file: st.session_state.angka_list = angka_from_file; st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
         except FileNotFoundError: st.error(f"File tidak ditemukan: '{file_path}'. Pastikan file ada di dalam folder '{folder_data}'.")
 
     with st.expander("✏️ Edit Data Angka Manual", expanded=True):
@@ -285,7 +290,21 @@ if check_password_per_device():
             st.session_state.angka_list = [line.strip()[:4] for line in riwayat_text.splitlines() if line.strip() and line.strip()[:4].isdigit()]; st.rerun()
 
     df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
-    tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs(["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"])
+    
+    # Menyiapkan daftar tab, tambahkan tab Admin jika pengguna adalah admin
+    tab_list = ["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"]
+    if st.session_state.get("is_admin"):
+        tab_list.append("👑 Admin")
+    
+    tabs = st.tabs(tab_list)
+    
+    # Mapping tab ke variabel agar mudah dibaca
+    tab_scan = tabs[0]
+    tab_manajemen = tabs[1]
+    tab_angka_main = tabs[2]
+    tab_prediksi = tabs[3]
+    if st.session_state.get("is_admin"):
+        tab_admin = tabs[4]
 
     with tab_prediksi:
         if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
@@ -323,19 +342,19 @@ if check_password_per_device():
                 st.session_state.scan_queue.append(label); st.toast(f"✅ Scan untuk '{label.upper()}' ditambahkan ke antrian."); st.rerun()
         category_tabs = st.tabs(["Digit", "Jumlah", "BBFS", "Shio", "Jalur Main"])
         with category_tabs[0]:
-            cols = st.columns(len(DIGIT_LABELS))
+            cols = st.columns(len(DIGIT_LABELS));
             for i, label in enumerate(DIGIT_LABELS): create_scan_button(label, cols[i])
         with category_tabs[1]:
-            cols = st.columns(len(JUMLAH_LABELS))
+            cols = st.columns(len(JUMLAH_LABELS));
             for i, label in enumerate(JUMLAH_LABELS): create_scan_button(label, cols[i])
         with category_tabs[2]:
-            cols = st.columns(len(BBFS_LABELS))
+            cols = st.columns(len(BBFS_LABELS));
             for i, label in enumerate(BBFS_LABELS): create_scan_button(label, cols[i])
         with category_tabs[3]:
-            cols = st.columns(len(SHIO_LABELS))
+            cols = st.columns(len(SHIO_LABELS));
             for i, label in enumerate(SHIO_LABELS): create_scan_button(label, cols[i])
         with category_tabs[4]:
-            cols = st.columns(len(JALUR_LABELS))
+            cols = st.columns(len(JALUR_LABELS));
             for i, label in enumerate(JALUR_LABELS): create_scan_button(label, cols[i])
         st.divider()
         if st.session_state.scan_outputs:
@@ -371,11 +390,37 @@ if check_password_per_device():
                 for mode in ['depan', 'tengah', 'belakang']:
                     title = f"Analisis AI {mode.capitalize()} (berdasarkan digit {'EKOR' if mode=='depan' else 'AS' if mode=='tengah' else 'KOP'})"
                     with st.expander(title, expanded=(mode=='depan')):
-                        result = calculate_markov_ai(df, jumlah_digit, mode)
-                        st.text_area(f"Hasil Analisis ({mode.capitalize()})", result, height=300, label_visibility="collapsed", key=f"ai_{mode}")
+                        result = calculate_markov_ai(df, jumlah_digit, mode); st.text_area(f"Hasil Analisis ({mode.capitalize()})", result, height=300, label_visibility="collapsed", key=f"ai_{mode}")
             with col2:
-                st.markdown("##### Statistik Lainnya")
-                stats = calculate_angka_main_stats(df, jumlah_digit)
-                st.markdown(f"**Jumlah 2D (Belakang):**"); st.code(stats['jumlah_2d'])
-                st.markdown(f"**Colok Bebas:**"); st.code(stats['colok_bebas'])
+                st.markdown("##### Statistik Lainnya"); stats = calculate_angka_main_stats(df, jumlah_digit); st.markdown(f"**Jumlah 2D (Belakang):**"); st.code(stats['jumlah_2d']); st.markdown(f"**Colok Bebas:**"); st.code(stats['colok_bebas'])
         else: st.warning("Data historis tidak cukup (minimal 10 baris).")
+
+    # Logika untuk Tab Admin, hanya ditampilkan jika pengguna adalah admin
+    if st.session_state.get("is_admin"):
+        with tab_admin:
+            st.subheader("👑 Panel Manajemen Sesi")
+            st.write("Di sini Anda bisa melihat semua password yang sedang aktif digunakan dan melakukan logout paksa jika diperlukan.")
+            
+            device_log = get_device_log()
+            
+            if not device_log:
+                st.success("✅ Tidak ada sesi pengguna yang sedang aktif.")
+            else:
+                st.markdown("---")
+                for password, session_id in device_log.items():
+                    # Jangan tampilkan sesi admin itu sendiri
+                    if password == ADMIN_PASSWORD:
+                        continue
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.text(f"Password: '{password}' sedang digunakan.")
+                    with col2:
+                        if st.button(f"Logout Paksa", key=f"logout_{password}"):
+                            # Hapus entri dari log
+                            del device_log[password]
+                            save_device_log(device_log)
+                            st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
+                            time.sleep(1)
+                            st.rerun()
+                st.markdown("---")
