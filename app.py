@@ -9,7 +9,8 @@ from itertools import product
 from datetime import datetime, timedelta
 import json
 import uuid
-import traceback # <-- DITAMBAHKAN UNTUK MELACAK ERROR
+import traceback
+import tensorflow as tf # Pindahkan import TF ke atas
 
 # ==============================================================================
 # KONFIGURASI & FUNGSI PASSWORD
@@ -101,31 +102,43 @@ def check_password_per_device():
 # ==============================================================================
 # BAGIAN 1: FUNGSI-FUNGSI INTI
 # ==============================================================================
+
+# --- BAGIAN YANG DIPERBAIKI ---
+# Mendefinisikan class Layer secara langsung di scope global untuk menghindari konflik state TF dengan cache Streamlit.
+class PositionalEncoding(tf.keras.layers.Layer):
+    def call(self, x):
+        seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
+        pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], dtype=tf.float32)
+        i = tf.cast(tf.range(d_model)[tf.newaxis, :], dtype=tf.float32)
+        angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
+        angle_rads = pos * angle_rates
+        sines = tf.math.sin(angle_rads[:, 0::2])
+        cosines = tf.math.cos(angle_rads[:, 1::2])
+        pos_encoding = tf.concat([sines, cosines], axis=-1)
+        return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
+# --- AKHIR BAGIAN YANG DIPERBAIKI ---
+
+
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
 JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
 SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
 JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 JALUR_ANGKA_MAP = {1: "01*13*25*37*49*61*73*85*97*04*16*28*40*52*64*76*88*00*07*19*31*43*55*67*79*91*10*22*34*46*58*70*82*94", 2: "02*14*26*38*50*62*74*86*98*05*17*29*41*53*65*77*89*08*20*32*44*56*68*80*92*11*23*35*47*59*71*83*95", 3: "03*15*27*39*51*63*75*87*99*06*18*30*42*54*66*78*90*09*21*33*45*57*69*81*93*12*24*36*48*60*72*84*96"}
-@st.cache_resource
-def _get_positional_encoding_layer():
-    import tensorflow as tf
-    class PositionalEncoding(tf.keras.layers.Layer):
-        def call(self, x):
-            seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
-            pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], dtype=tf.float32); i = tf.cast(tf.range(d_model)[tf.newaxis, :], dtype=tf.float32)
-            angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32)); angle_rads = pos * angle_rates
-            sines, cosines = tf.math.sin(angle_rads[:, 0::2]), tf.math.cos(angle_rads[:, 1::2]); pos_encoding = tf.concat([sines, cosines], axis=-1)
-            return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
-    return PositionalEncoding
+
+# Fungsi _get_positional_encoding_layer() sudah tidak diperlukan dan dihapus.
+
 @st.cache_resource
 def load_cached_model(model_path):
     from tensorflow.keras.models import load_model
-    PositionalEncoding = _get_positional_encoding_layer()
     if os.path.exists(model_path):
-        try: return load_model(model_path, custom_objects={"PositionalEncoding": PositionalEncoding})
-        except Exception as e: st.error(f"Gagal memuat model di {model_path}: {e}")
+        try:
+            # Menggunakan class PositionalEncoding yang sudah didefinisikan secara global
+            return load_model(model_path, custom_objects={"PositionalEncoding": PositionalEncoding})
+        except Exception as e:
+            st.error(f"Gagal memuat model di {model_path}: {e}")
     return None
+
 def top6_markov(df, top_n=6):
     if df.empty or len(df) < 10: return [], None
     data = df["angka"].astype(str).tolist(); matrix = [defaultdict(lambda: defaultdict(int)) for _ in range(3)]
@@ -136,11 +149,13 @@ def top6_markov(df, top_n=6):
     for i in range(3):
         kandidat = [int(k) for prev in matrix[i] for k in matrix[i][prev].keys()]; top = [k for k, _ in Counter(kandidat).most_common()]; hasil.append(top)
     unique_hasil = [list(dict.fromkeys(h))[:top_n] for h in hasil]; return unique_hasil, None
+
 def calculate_angka_main_stats(df, top_n=5):
     if df.empty or len(df) < 10: return {"jumlah_2d": "Data tidak cukup", "colok_bebas": "Data tidak cukup"}
     angka_str = df["angka"].astype(str).str.zfill(4); puluhan = angka_str.str[2].astype(int); satuan = angka_str.str[3].astype(int); jumlah = (puluhan + satuan) % 10
     jumlah_2d = ", ".join(map(str, jumlah.value_counts().nlargest(top_n).index)); all_digits = "".join(angka_str.tolist()); colok_bebas = ", ".join([item[0] for item in Counter(all_digits).most_common(top_n)])
     return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
+
 def calculate_markov_ai(df, top_n=6, mode='belakang'):
     if df.empty or len(df) < 10: return "Data tidak cukup untuk analisis."
     mode_to_idx = {'depan': 3, 'tengah': 1, 'belakang': 0}; start_idx = mode_to_idx[mode]; angka_str_list = df["angka"].astype(str).str.zfill(4).tolist(); transitions = defaultdict(list)
@@ -156,6 +171,7 @@ def calculate_markov_ai(df, top_n=6, mode='belakang'):
                 if digit not in set(final_digits): final_digits.append(digit)
         prediction_map[start_digit] = "".join(final_digits[:top_n])
     output_lines = [f"{num_str} = {prediction_map.get(num_str[start_idx], '')} ai" for num_str in angka_str_list[-30:]]; return "\n".join(output_lines)
+
 def tf_preprocess_data(df, window_size=7):
     from tensorflow.keras.utils import to_categorical
     if len(df) < window_size + 1: return np.array([]), {}
@@ -176,6 +192,7 @@ def tf_preprocess_data(df, window_size=7):
         for label, two_digit_num in shio_num_map.items():
             shio_index = (two_digit_num - 1) % 12 if two_digit_num > 0 else 11; targets[label].append(to_categorical(shio_index, num_classes=12))
     final_targets = {label: np.array(v) for label, v in targets.items() if v}; return np.array(sequences), final_targets
+
 def tf_preprocess_data_for_jalur(df, window_size, target_position):
     from tensorflow.keras.utils import to_categorical
     if len(df) < window_size + 1: return np.array([]), np.array([])
@@ -185,15 +202,36 @@ def tf_preprocess_data_for_jalur(df, window_size, target_position):
         if any(not x.isdigit() for x in window): continue
         sequences.append([int(d) for num in window[:-1] for d in num]); target_digits = [int(d) for d in window[-1]]; two_digit_num = target_digits[idx1] * 10 + target_digits[idx2]; shio_value = (two_digit_num - 1) % 12 + 1 if two_digit_num > 0 else 12; targets.append(to_categorical(shio_to_jalur[shio_value] - 1, num_classes=3))
     return np.array(sequences), np.array(targets)
+
 def build_tf_model(input_len, model_type, problem_type, num_classes):
-    from tensorflow.keras.models import Model; from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Dropout, Dense, LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
-    PositionalEncoding = _get_positional_encoding_layer(); inputs = Input(shape=(input_len,)); x = Embedding(10, 64)(inputs); x = PositionalEncoding()(x)
+    from tensorflow.keras.models import Model
+    from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Dropout, Dense, LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
+    
+    inputs = Input(shape=(input_len,))
+    x = Embedding(10, 64)(inputs)
+    x = PositionalEncoding()(x) # Langsung gunakan class global
+    
     if model_type == "transformer":
-        attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x); x = LayerNormalization()(x + attn)
-    else: x = Bidirectional(LSTM(128, return_sequences=True))(x); x = Dropout(0.3)(x)
-    x = GlobalAveragePooling1D()(x); x = Dense(128, activation='relu')(x); x = Dropout(0.2)(x)
-    outputs, loss = (Dense(num_classes, activation='sigmoid')(x), "binary_crossentropy") if problem_type == "multilabel" else (Dense(num_classes, activation='softmax')(x), "categorical_crossentropy")
-    model = Model(inputs, outputs); return model, loss
+        attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
+        x = LayerNormalization()(x + attn)
+    else:
+        x = Bidirectional(LSTM(128, return_sequences=True))(x)
+        x = Dropout(0.3)(x)
+        
+    x = GlobalAveragePooling1D()(x)
+    x = Dense(128, activation='relu')(x)
+    x = Dropout(0.2)(x)
+    
+    if problem_type == "multilabel":
+        outputs = Dense(num_classes, activation='sigmoid')(x)
+        loss = "binary_crossentropy"
+    else:
+        outputs = Dense(num_classes, activation='softmax')(x)
+        loss = "categorical_crossentropy"
+        
+    model = Model(inputs, outputs)
+    return model, loss
+
 def top_n_model(df, lokasi, window_dict, model_type, top_n):
     results = []; loc_id = lokasi.lower().strip().replace(" ", "_")
     for label in DIGIT_LABELS:
@@ -271,14 +309,10 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             
             if score > best_score:
                 best_score, best_ws = score, ws
-        
-        # --- BAGIAN YANG DIPERBAIKI (Pelacakan Error Detail) ---
         except Exception as e:
             st.warning(f"Gagal di WS={ws}: {e}")
-            # Menampilkan traceback error yang detail untuk debugging
             st.code(traceback.format_exc())
             continue
-        # --- AKHIR BAGIAN YANG DIPERBAIKI ---
             
     bar.empty()
     return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
