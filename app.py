@@ -119,7 +119,7 @@ def check_password_per_device():
     return False
 
 # ==============================================================================
-# BAGIAN 1: FUNGSI-FUNGSI INTI (Tidak ada perubahan di bagian ini)
+# BAGIAN 1: FUNGSI-FUNGSI INTI
 # ==============================================================================
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
@@ -223,31 +223,82 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n):
         if model is None: st.error(f"Model {label} tidak ditemukan."); return None, None
         pred = model.predict(X, verbose=0); results.append(list(np.mean(pred, axis=0).argsort()[-top_n:][::-1]))
     return results, None
+
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
-    from sklearn.model_selection import train_test_split; from tensorflow.keras.callbacks import EarlyStopping; from tensorflow.keras.metrics import TopKCategoricalAccuracy
-    best_ws, best_score, table_data = None, -1, []; is_jalur_scan = label in JALUR_LABELS
-    if is_jalur_scan: pt, k, nc, cols = "jalur_multiclass", 2, 3, ["Window Size", "Prediksi", "Angka Jalur"]
-    elif label in BBFS_LABELS: pt, k, nc, cols = "multilabel", top_n, 10, ["Window Size", f"Top-{k}"]
-    elif label in SHIO_LABELS: pt, k, nc, cols = "shio", top_n_shio, 12, ["Window Size", f"Top-{k}"]
-    else: pt, k, nc, cols = "multiclass", top_n, 10, ["Window Size", f"Top-{k}"]
-    bar = st.progress(0, text=f"Memulai Scan {label.upper()}... [0%]"); total_ws = (max_ws - min_ws) + 1
+    from sklearn.model_selection import train_test_split
+    from tensorflow.keras.callbacks import EarlyStopping
+    from tensorflow.keras.metrics import TopKCategoricalAccuracy
+    
+    best_ws, best_score, table_data = None, -1, []
+    is_jalur_scan = label in JALUR_LABELS
+
+    # --- BAGIAN YANG DIPERBAIKI (UnboundLocalError fix) ---
+    if is_jalur_scan:
+        pt, k, nc = "jalur_multiclass", 2, 3
+        cols = ["Window Size", "Prediksi", "Angka Jalur"]
+    elif label in BBFS_LABELS:
+        pt, k, nc = "multilabel", top_n, 10
+        cols = ["Window Size", f"Top-{k}"]
+    elif label in SHIO_LABELS:
+        pt, k, nc = "shio", top_n_shio, 12
+        cols = ["Window Size", f"Top-{k}"]
+    else:  # Untuk kategori Digit seperti "RIBUAN"
+        pt, k, nc = "multiclass", top_n, 10
+        cols = ["Window Size", f"Top-{k}"]
+    # --- AKHIR BAGIAN YANG DIPERBAIKI ---
+
+    bar = st.progress(0, text=f"Memulai Scan {label.upper()}... [0%]")
+    total_ws = (max_ws - min_ws) + 1
+    
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
-        progress_value = (i + 1) / total_ws; percentage = int(progress_value * 100); bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
+        progress_value = (i + 1) / total_ws
+        percentage = int(progress_value * 100)
+        bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
         try:
-            if is_jalur_scan: X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
-            else: X, y_dict = tf_preprocess_data(df, ws); y = y_dict.get(label)
-            if X.shape[0] < 10: continue
-            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42); model, loss = build_tf_model(X.shape[1], model_type, 'multiclass' if is_jalur_scan else pt, nc); metrics = ['accuracy']
-            if pt != 'multilabel': metrics.append(TopKCategoricalAccuracy(k=k))
-            model.compile(optimizer="adam", loss=loss, metrics=metrics); model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
-            evals = model.evaluate(X_val, y_val, verbose=0); preds = model.predict(X_val, verbose=0)
             if is_jalur_scan:
-                top_indices = np.argsort(preds[-1])[::-1][:2]; pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"; angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"; score = (evals[1] * 0.3) + (evals[2] * 0.7); table_data.append((ws, pred_str, angka_jalur_str))
+                X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
             else:
-                avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:])*100; top_indices = np.argsort(preds[-1])[::-1][:k]; pred_str = ", ".join(map(str, top_indices + 1)) if pt == "shio" else ", ".join(map(str, top_indices)); score = (evals[1] * 0.7) + (avg_conf/100*0.3) if pt=='multilabel' else (evals[1]*0.2)+(evals[2]*0.5)+(avg_conf/100*0.3); table_data.append((ws, pred_str))
-            if score > best_score: best_score, best_ws = score, ws
-        except Exception as e: st.warning(f"Gagal di WS={ws}: {e}"); continue
-    bar.empty(); return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
+                X, y_dict = tf_preprocess_data(df, ws)
+                y = y_dict.get(label)
+            
+            if y is None or X.shape[0] < 10:
+                continue
+
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+            model, loss = build_tf_model(X.shape[1], model_type, 'multiclass' if is_jalur_scan else pt, nc)
+            metrics = ['accuracy']
+            
+            if pt != 'multilabel':
+                metrics.append(TopKCategoricalAccuracy(k=k))
+            
+            model.compile(optimizer="adam", loss=loss, metrics=metrics)
+            model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
+            
+            evals = model.evaluate(X_val, y_val, verbose=0)
+            preds = model.predict(X_val, verbose=0)
+
+            if is_jalur_scan:
+                top_indices = np.argsort(preds[-1])[::-1][:2]
+                pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
+                angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
+                score = (evals[1] * 0.3) + (evals[2] * 0.7)
+                table_data.append((ws, pred_str, angka_jalur_str))
+            else:
+                avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:]) * 100
+                top_indices = np.argsort(preds[-1])[::-1][:k]
+                pred_str = ", ".join(map(str, top_indices + 1)) if pt == "shio" else ", ".join(map(str, top_indices))
+                score = (evals[1] * 0.7) + (avg_conf / 100 * 0.3) if pt == 'multilabel' else (evals[1] * 0.2) + (evals[2] * 0.5) + (avg_conf / 100 * 0.3)
+                table_data.append((ws, pred_str))
+            
+            if score > best_score:
+                best_score, best_ws = score, ws
+        except Exception as e:
+            st.warning(f"Gagal di WS={ws}: {e}")
+            continue
+            
+    bar.empty()
+    return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
+
 def train_and_save_model(df, lokasi, window_dict, model_type):
     from sklearn.model_selection import train_test_split; from tensorflow.keras.callbacks import EarlyStopping
     st.info(f"Memulai pelatihan untuk {lokasi}..."); lokasi_id = lokasi.lower().strip().replace(" ", "_")
@@ -402,7 +453,6 @@ if check_password_per_device():
             with col1:
                 st.markdown("##### Analisis AI Berdasarkan Posisi")
                 for mode in ['depan', 'tengah', 'belakang']:
-                    # --- BAGIAN YANG DIPERBAIKI DARI SYNTAX ERROR SEBELUMNYA ---
                     posisi_map = {'depan': 'EKOR', 'tengah': 'AS', 'belakang': 'KOP'}
                     posisi = posisi_map.get(mode)
                     title = f"Analisis AI {mode.capitalize()} (berdasarkan digit {posisi})"
