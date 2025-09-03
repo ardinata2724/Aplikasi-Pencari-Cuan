@@ -15,7 +15,7 @@ import uuid
 # ==============================================================================
 
 # --- PENTING: Tentukan password admin Anda di sini ---
-ADMIN_PASSWORD = "Andi1991" 
+ADMIN_PASSWORD = "Andi1991"
 # --- Tentukan durasi timeout dalam menit ---
 SESSION_TIMEOUT_MINUTES = 15
 
@@ -23,8 +23,23 @@ PASSWORDS_FILE = "passwords.json"
 DEVICE_LOG_FILE = "device_log.json"
 
 def get_valid_passwords():
-    if not os.path.exists(PASSWORDS_FILE): return []
-    with open(PASSWORDS_FILE, 'r') as f: return json.load(f)
+    """
+    Membaca daftar password dari file JSON.
+    Fungsi ini sudah diperbaiki untuk menangani file kosong atau format JSON yang salah.
+    """
+    if not os.path.exists(PASSWORDS_FILE):
+        return []
+    try:
+        with open(PASSWORDS_FILE, 'r') as f:
+            content = f.read()
+            # Jika file kosong, kembalikan list kosong agar tidak error
+            if not content.strip():
+                return []
+            return json.loads(content)
+    except json.JSONDecodeError:
+        # Jika format JSON salah, beri peringatan dan kembalikan list kosong
+        st.error(f"Peringatan: File '{PASSWORDS_FILE}' tidak dapat dibaca (kemungkinan format salah atau rusak).")
+        return []
 
 def get_device_log():
     if not os.path.exists(DEVICE_LOG_FILE): return {}
@@ -387,12 +402,23 @@ if check_password_per_device():
             with col1:
                 st.markdown("##### Analisis AI Berdasarkan Posisi")
                 for mode in ['depan', 'tengah', 'belakang']:
-                    title = f"Analisis AI {mode.capitalize()} (berdasarkan digit {'EKOR' if mode=='depan' else 'AS' if mode=='tengah' else 'KOP'})"
+                    # --- BAGIAN YANG DIPERBAIKI DARI SYNTAX ERROR SEBELUMNYA ---
+                    posisi_map = {'depan': 'EKOR', 'tengah': 'AS', 'belakang': 'KOP'}
+                    posisi = posisi_map.get(mode)
+                    title = f"Analisis AI {mode.capitalize()} (berdasarkan digit {posisi})"
+                    
                     with st.expander(title, expanded=(mode=='depan')):
-                        result = calculate_markov_ai(df, jumlah_digit, mode); st.text_area(f"Hasil Analisis ({mode.capitalize()})", result, height=300, label_visibility="collapsed", key=f"ai_{mode}")
+                        result = calculate_markov_ai(df, jumlah_digit, mode)
+                        st.text_area(f"Hasil Analisis ({mode.capitalize()})", result, height=300, label_visibility="collapsed", key=f"ai_{mode}")
             with col2:
-                st.markdown("##### Statistik Lainnya"); stats = calculate_angka_main_stats(df, jumlah_digit); st.markdown(f"**Jumlah 2D (Belakang):**"); st.code(stats['jumlah_2d']); st.markdown(f"**Colok Bebas:**"); st.code(stats['colok_bebas'])
-        else: st.warning("Data historis tidak cukup (minimal 10 baris).")
+                st.markdown("##### Statistik Lainnya")
+                stats = calculate_angka_main_stats(df, jumlah_digit)
+                st.markdown(f"**Jumlah 2D (Belakang):**")
+                st.code(stats['jumlah_2d'])
+                st.markdown(f"**Colok Bebas:**")
+                st.code(stats['colok_bebas'])
+        else:
+            st.warning("Data historis tidak cukup (minimal 10 baris).")
 
     if st.session_state.get("is_admin"):
         with tab_admin:
@@ -414,3 +440,5 @@ if check_password_per_device():
                             del device_log[password]; save_device_log(device_log); st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
                             time.sleep(1); st.rerun()
                 st.markdown("---")
+
+}
