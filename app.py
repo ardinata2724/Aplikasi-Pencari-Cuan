@@ -9,6 +9,7 @@ from itertools import product
 from datetime import datetime, timedelta
 import json
 import uuid
+import traceback # <-- DITAMBAHKAN UNTUK MELACAK ERROR
 
 # ==============================================================================
 # KONFIGURASI & FUNGSI PASSWORD
@@ -23,21 +24,15 @@ PASSWORDS_FILE = "passwords.json"
 DEVICE_LOG_FILE = "device_log.json"
 
 def get_valid_passwords():
-    """
-    Membaca daftar password dari file JSON.
-    Fungsi ini sudah diperbaiki untuk menangani file kosong atau format JSON yang salah.
-    """
     if not os.path.exists(PASSWORDS_FILE):
         return []
     try:
         with open(PASSWORDS_FILE, 'r') as f:
             content = f.read()
-            # Jika file kosong, kembalikan list kosong agar tidak error
             if not content.strip():
                 return []
             return json.loads(content)
     except json.JSONDecodeError:
-        # Jika format JSON salah, beri peringatan dan kembalikan list kosong
         st.error(f"Peringatan: File '{PASSWORDS_FILE}' tidak dapat dibaca (kemungkinan format salah atau rusak).")
         return []
 
@@ -51,34 +46,27 @@ def save_device_log(log_data):
     with open(DEVICE_LOG_FILE, 'w') as f: json.dump(log_data, f, indent=4)
 
 def force_logout():
-    """Fungsi untuk melakukan logout paksa dan membersihkan sesi."""
     device_log = get_device_log()
     password_to_logout = None
-    
     for pwd, sid in device_log.items():
         if sid == st.session_state.get('user_session_id'):
             password_to_logout = pwd
             break
-            
     if password_to_logout and password_to_logout in device_log:
         del device_log[password_to_logout]
         save_device_log(device_log)
-
     for key in ['logged_in', 'is_admin', 'user_session_id', 'last_activity_time']:
         if key in st.session_state:
             del st.session_state[key]
 
 def check_password_per_device():
-    """Memeriksa password, sesi, dan timeout."""
     for key, default in [('logged_in', False), ('is_admin', False), ('user_session_id', None), ('last_activity_time', None)]:
         if key not in st.session_state: st.session_state[key] = default
-
     if st.session_state.logged_in and st.session_state.last_activity_time:
         if datetime.now() - st.session_state.last_activity_time > timedelta(minutes=SESSION_TIMEOUT_MINUTES):
             force_logout()
             st.warning(f"Anda telah otomatis logout karena tidak aktif selama {SESSION_TIMEOUT_MINUTES} menit.")
             time.sleep(2); st.rerun()
-
     if st.session_state.logged_in:
         device_log = get_device_log()
         password_found = any(sid == st.session_state.user_session_id for sid in device_log.values())
@@ -88,34 +76,26 @@ def check_password_per_device():
             force_logout(); st.warning("Sesi Anda tidak valid. Silakan login kembali."); st.rerun()
 
     st.title("🔐 Login Aplikasi")
-    
     with st.form(key="login_form"):
         password = st.text_input("Masukkan Password Anda", type="password")
         login_button = st.form_submit_button("Login")
-
     if login_button:
         valid_passwords = get_valid_passwords()
         device_log = get_device_log()
-
         if password in valid_passwords:
             if password in device_log:
                 session_id = device_log[password]
-                st.session_state.user_session_id = session_id
-                st.session_state.logged_in = True
-                st.session_state.is_admin = (password == ADMIN_PASSWORD)
-                st.rerun()
             else:
                 session_id = str(uuid.uuid4())
-                st.session_state.user_session_id = session_id
-                st.session_state.logged_in = True
-                st.session_state.is_admin = (password == ADMIN_PASSWORD)
                 device_log[password] = session_id
                 save_device_log(device_log)
-                st.rerun()
+            st.session_state.user_session_id = session_id
+            st.session_state.logged_in = True
+            st.session_state.is_admin = (password == ADMIN_PASSWORD)
+            st.rerun()
         else:
             st.error("😕 Password salah atau tidak terdaftar.")
             st.session_state.logged_in = False
-            
     return False
 
 # ==============================================================================
@@ -253,21 +233,15 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         percentage = int(progress_value * 100)
         bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
         try:
-            # --- BAGIAN YANG DIPERBAIKI (NoneType Error fix) ---
-            # Logika validasi data dibuat lebih kuat
             if is_jalur_scan:
                 X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
-                # Pengecekan data yang tidak cukup
                 if not y.any() or y.shape[0] < 10 or X.shape[0] < 10:
                     continue
             else:
                 X, y_dict = tf_preprocess_data(df, ws)
-                # Pengecekan yang lebih robust untuk memastikan label ada di dictionary
-                # dan datanya cukup
                 if label not in y_dict or y_dict[label].shape[0] < 10 or X.shape[0] < 10:
                     continue
                 y = y_dict[label]
-            # --- AKHIR BAGIAN YANG DIPERBAIKI ---
 
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
             model, loss = build_tf_model(X.shape[1], model_type, 'multiclass' if is_jalur_scan else pt, nc)
@@ -297,9 +271,14 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             
             if score > best_score:
                 best_score, best_ws = score, ws
+        
+        # --- BAGIAN YANG DIPERBAIKI (Pelacakan Error Detail) ---
         except Exception as e:
             st.warning(f"Gagal di WS={ws}: {e}")
+            # Menampilkan traceback error yang detail untuk debugging
+            st.code(traceback.format_exc())
             continue
+        # --- AKHIR BAGIAN YANG DIPERBAIKI ---
             
     bar.empty()
     return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
