@@ -375,7 +375,7 @@ if check_password_per_device():
                     posisi = {'depan': 'EKOR', 'tengah': 'AS', 'belakang': 'KOP'}.get(mode)
                     title = f"Analisis AI {mode.capitalize()} (berdasarkan digit {posisi})"
                     with st.expander(title, expanded=(mode=='depan')):
-                        # --- PERBAIKAN SYNTAX ERROR ---
+                        # --- PERBAIKAN SYNTAX ERROR DI SINI ---
                         st.text_area(f"Hasil Analisis ({mode.capitalize()})", calculate_markov_ai(df, jumlah_digit, mode), height=300, label_visibility="collapsed", key=f"ai_{mode}")
             with col2:
                 st.markdown("##### Statistik Lainnya"); stats = calculate_angka_main_stats(df, jumlah_digit)
