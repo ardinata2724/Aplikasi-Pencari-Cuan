@@ -11,6 +11,7 @@ import json
 import uuid
 import traceback
 import tensorflow as tf
+import gc # <-- Ditambahkan untuk pembersihan memori paksa
 
 # ==============================================================================
 # KONFIGURASI & FUNGSI PASSWORD
@@ -228,6 +229,8 @@ def build_tf_model(input_len, model_type, problem_type, num_classes):
 def top_n_model(df, lokasi, window_dict, model_type, top_n):
     results = []; loc_id = lokasi.lower().strip().replace(" ", "_")
     for label in DIGIT_LABELS:
+        tf.keras.backend.clear_session()
+        gc.collect()
         ws = window_dict.get(label, 7); X, _ = tf_preprocess_data(df, ws)
         if X.shape[0] == 0: return None, None
         model_path = f"saved_models/{loc_id}_{label}_{model_type}.h5"; model = load_cached_model(model_path)
@@ -264,11 +267,11 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         percentage = int(progress_value * 100)
         bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
         try:
-            # --- PERBAIKAN FINAL ---
-            # Membersihkan state internal Keras/TensorFlow sebelum setiap loop
-            # untuk mencegah error akibat sisa proses dari loop sebelumnya.
+            # --- SOLUSI PAMUNGKAS ---
+            # Membersihkan state internal Keras/TensorFlow dan memori secara paksa
             tf.keras.backend.clear_session()
-            # --- AKHIR PERBAIKAN FINAL ---
+            gc.collect()
+            # --- AKHIR SOLUSI PAMUNGKAS ---
 
             if is_jalur_scan:
                 X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
@@ -321,8 +324,10 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
     st.info(f"Memulai pelatihan untuk {lokasi}..."); lokasi_id = lokasi.lower().strip().replace(" ", "_")
     if not os.path.exists("saved_models"): os.makedirs("saved_models")
     for label in DIGIT_LABELS:
-        # Menambahkan clear_session() di sini juga untuk kebersihan state
+        # Menambahkan pembersihan paksa di sini juga untuk konsistensi
         tf.keras.backend.clear_session()
+        gc.collect()
+        
         ws = window_dict.get(label, 7); bar = st.progress(0, text=f"Memproses {label.upper()} (WS={ws})..."); X, y_dict = tf_preprocess_data(df, ws)
         if label not in y_dict or y_dict[label].shape[0] < 10: st.warning(f"Data tidak cukup untuk melatih '{label.upper()}'."); bar.empty(); continue
         X_train, X_val, y_train, y_val = train_test_split(X, y_dict[label], test_size=0.2, random_state=42); bar.progress(50, text=f"Melatih {label.upper()}...")
