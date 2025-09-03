@@ -440,5 +440,3 @@ if check_password_per_device():
                             del device_log[password]; save_device_log(device_log); st.success(f"Sesi untuk password '{password}' berhasil dihapus!")
                             time.sleep(1); st.rerun()
                 st.markdown("---")
-
-}
