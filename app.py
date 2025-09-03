@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import json
 import uuid
 import traceback
-import tensorflow as tf # Pindahkan import TF ke atas
+import tensorflow as tf
 
 # ==============================================================================
 # KONFIGURASI & FUNGSI PASSWORD
@@ -103,7 +103,7 @@ def check_password_per_device():
 # BAGIAN 1: FUNGSI-FUNGSI INTI
 # ==============================================================================
 
-# --- BAGIAN YANG DIPERBAIKI ---
+# --- PERBAIKAN FINAL ---
 # Mendefinisikan class Layer secara langsung di scope global untuk menghindari konflik state TF dengan cache Streamlit.
 class PositionalEncoding(tf.keras.layers.Layer):
     def call(self, x):
@@ -116,8 +116,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
         cosines = tf.math.cos(angle_rads[:, 1::2])
         pos_encoding = tf.concat([sines, cosines], axis=-1)
         return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
-# --- AKHIR BAGIAN YANG DIPERBAIKI ---
-
+# --- AKHIR PERBAIKAN FINAL ---
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
@@ -126,7 +125,7 @@ SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
 JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 JALUR_ANGKA_MAP = {1: "01*13*25*37*49*61*73*85*97*04*16*28*40*52*64*76*88*00*07*19*31*43*55*67*79*91*10*22*34*46*58*70*82*94", 2: "02*14*26*38*50*62*74*86*98*05*17*29*41*53*65*77*89*08*20*32*44*56*68*80*92*11*23*35*47*59*71*83*95", 3: "03*15*27*39*51*63*75*87*99*06*18*30*42*54*66*78*90*09*21*33*45*57*69*81*93*12*24*36*48*60*72*84*96"}
 
-# Fungsi _get_positional_encoding_layer() sudah tidak diperlukan dan dihapus.
+# Fungsi _get_positional_encoding_layer() yang menggunakan @st.cache_resource dihapus karena menyebabkan masalah.
 
 @st.cache_resource
 def load_cached_model(model_path):
@@ -209,7 +208,7 @@ def build_tf_model(input_len, model_type, problem_type, num_classes):
     
     inputs = Input(shape=(input_len,))
     x = Embedding(10, 64)(inputs)
-    x = PositionalEncoding()(x) # Langsung gunakan class global
+    x = PositionalEncoding()(x) # Langsung gunakan class global yang sudah didefinisikan
     
     if model_type == "transformer":
         attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
