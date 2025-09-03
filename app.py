@@ -103,8 +103,6 @@ def check_password_per_device():
 # BAGIAN 1: FUNGSI-FUNGSI INTI
 # ==============================================================================
 
-# --- PERBAIKAN FINAL ---
-# Mendefinisikan class Layer secara langsung di scope global untuk menghindari konflik state TF dengan cache Streamlit.
 class PositionalEncoding(tf.keras.layers.Layer):
     def call(self, x):
         seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
@@ -116,7 +114,6 @@ class PositionalEncoding(tf.keras.layers.Layer):
         cosines = tf.math.cos(angle_rads[:, 1::2])
         pos_encoding = tf.concat([sines, cosines], axis=-1)
         return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
-# --- AKHIR PERBAIKAN FINAL ---
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
@@ -125,14 +122,11 @@ SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
 JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 JALUR_ANGKA_MAP = {1: "01*13*25*37*49*61*73*85*97*04*16*28*40*52*64*76*88*00*07*19*31*43*55*67*79*91*10*22*34*46*58*70*82*94", 2: "02*14*26*38*50*62*74*86*98*05*17*29*41*53*65*77*89*08*20*32*44*56*68*80*92*11*23*35*47*59*71*83*95", 3: "03*15*27*39*51*63*75*87*99*06*18*30*42*54*66*78*90*09*21*33*45*57*69*81*93*12*24*36*48*60*72*84*96"}
 
-# Fungsi _get_positional_encoding_layer() yang menggunakan @st.cache_resource dihapus karena menyebabkan masalah.
-
 @st.cache_resource
 def load_cached_model(model_path):
     from tensorflow.keras.models import load_model
     if os.path.exists(model_path):
         try:
-            # Menggunakan class PositionalEncoding yang sudah didefinisikan secara global
             return load_model(model_path, custom_objects={"PositionalEncoding": PositionalEncoding})
         except Exception as e:
             st.error(f"Gagal memuat model di {model_path}: {e}")
@@ -208,7 +202,7 @@ def build_tf_model(input_len, model_type, problem_type, num_classes):
     
     inputs = Input(shape=(input_len,))
     x = Embedding(10, 64)(inputs)
-    x = PositionalEncoding()(x) # Langsung gunakan class global yang sudah didefinisikan
+    x = PositionalEncoding()(x)
     
     if model_type == "transformer":
         attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
@@ -270,6 +264,12 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         percentage = int(progress_value * 100)
         bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
         try:
+            # --- PERBAIKAN FINAL ---
+            # Membersihkan state internal Keras/TensorFlow sebelum setiap loop
+            # untuk mencegah error akibat sisa proses dari loop sebelumnya.
+            tf.keras.backend.clear_session()
+            # --- AKHIR PERBAIKAN FINAL ---
+
             if is_jalur_scan:
                 X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
                 if not y.any() or y.shape[0] < 10 or X.shape[0] < 10:
@@ -321,6 +321,8 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
     st.info(f"Memulai pelatihan untuk {lokasi}..."); lokasi_id = lokasi.lower().strip().replace(" ", "_")
     if not os.path.exists("saved_models"): os.makedirs("saved_models")
     for label in DIGIT_LABELS:
+        # Menambahkan clear_session() di sini juga untuk kebersihan state
+        tf.keras.backend.clear_session()
         ws = window_dict.get(label, 7); bar = st.progress(0, text=f"Memproses {label.upper()} (WS={ws})..."); X, y_dict = tf_preprocess_data(df, ws)
         if label not in y_dict or y_dict[label].shape[0] < 10: st.warning(f"Data tidak cukup untuk melatih '{label.upper()}'."); bar.empty(); continue
         X_train, X_val, y_train, y_val = train_test_split(X, y_dict[label], test_size=0.2, random_state=42); bar.progress(50, text=f"Melatih {label.upper()}...")
