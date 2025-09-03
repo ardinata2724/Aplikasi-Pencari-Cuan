@@ -195,7 +195,6 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n):
         pred = model.predict(X, verbose=0); results.append(list(np.mean(pred, axis=0).argsort()[-top_n:][::-1]))
     return results, None
 
-# --- FUNGSI HELPER BARU YANG TERISOLASI ---
 def _train_single_model_for_ws(X_train, y_train, X_val, y_val, model_params):
     tf.keras.backend.clear_session(); gc.collect()
     from tensorflow.keras.callbacks import EarlyStopping; from tensorflow.keras.metrics import TopKCategoricalAccuracy
@@ -369,7 +368,7 @@ if check_password_per_device():
     with tabs[2]: # Angka Main
         st.subheader("Analisis Angka Main dari Data Historis")
         if not df.empty and len(df) >= 10:
-            col1, col2 = st.columns([2, 1]) 
+            col1, col2 = st.columns([2, 1])
             with col1:
                 st.markdown("##### Analisis AI Berdasarkan Posisi")
                 for mode in ['depan', 'tengah', 'belakang']:
