@@ -232,7 +232,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     best_ws, best_score, table_data = None, -1, []
     is_jalur_scan = label in JALUR_LABELS
 
-    # --- BAGIAN YANG DIPERBAIKI (UnboundLocalError fix) ---
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
         cols = ["Window Size", "Prediksi", "Angka Jalur"]
@@ -242,10 +241,9 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     elif label in SHIO_LABELS:
         pt, k, nc = "shio", top_n_shio, 12
         cols = ["Window Size", f"Top-{k}"]
-    else:  # Untuk kategori Digit seperti "RIBUAN"
+    else:
         pt, k, nc = "multiclass", top_n, 10
         cols = ["Window Size", f"Top-{k}"]
-    # --- AKHIR BAGIAN YANG DIPERBAIKI ---
 
     bar = st.progress(0, text=f"Memulai Scan {label.upper()}... [0%]")
     total_ws = (max_ws - min_ws) + 1
@@ -255,14 +253,21 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         percentage = int(progress_value * 100)
         bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
         try:
+            # --- BAGIAN YANG DIPERBAIKI (NoneType Error fix) ---
+            # Logika validasi data dibuat lebih kuat
             if is_jalur_scan:
                 X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
+                # Pengecekan data yang tidak cukup
+                if not y.any() or y.shape[0] < 10 or X.shape[0] < 10:
+                    continue
             else:
                 X, y_dict = tf_preprocess_data(df, ws)
-                y = y_dict.get(label)
-            
-            if y is None or X.shape[0] < 10:
-                continue
+                # Pengecekan yang lebih robust untuk memastikan label ada di dictionary
+                # dan datanya cukup
+                if label not in y_dict or y_dict[label].shape[0] < 10 or X.shape[0] < 10:
+                    continue
+                y = y_dict[label]
+            # --- AKHIR BAGIAN YANG DIPERBAIKI ---
 
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
             model, loss = build_tf_model(X.shape[1], model_type, 'multiclass' if is_jalur_scan else pt, nc)
