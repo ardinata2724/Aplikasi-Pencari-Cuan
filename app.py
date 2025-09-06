@@ -174,15 +174,21 @@ def tf_preprocess_data_for_jalur(df, window_size, target_position):
         targets.append(to_categorical(shio_to_jalur[shio] - 1, num_classes=3))
     return np.array(sequences), np.array(targets)
 
+# --- PERUBAHAN BARU DI SINI ---
 def build_tf_model(input_len, model_type, problem_type, num_classes):
-    from tensorflow.keras.models import Model; from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Dropout, Dense, LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
+    from tensorflow.keras.models import Model; from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Dense, LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
     inputs = Input(shape=(input_len,)); x = Embedding(10, 64)(inputs); x = PositionalEncoding()(x)
     if model_type == "transformer":
         attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x); x = LayerNormalization()(x + attn)
-    else: x = Bidirectional(LSTM(128, return_sequences=True))(x); x = Dropout(0.3)(x)
-    x = GlobalAveragePooling1D()(x); x = Dense(128, activation='relu')(x); x = Dropout(0.2)(x)
+    else: 
+        x = Bidirectional(LSTM(128, return_sequences=True))(x)
+        # Dropout(0.3) dihapus
+    x = GlobalAveragePooling1D()(x)
+    x = Dense(128, activation='relu')(x)
+    # Dropout(0.2) dihapus
     outputs, loss = (Dense(num_classes, activation='sigmoid')(x), "binary_crossentropy") if problem_type == "multilabel" else (Dense(num_classes, activation='softmax')(x), "categorical_crossentropy")
     return Model(inputs, outputs), loss
+# --- AKHIR PERUBAHAN BARU ---
 
 def top_n_model(df, lokasi, window_dict, model_type, top_n):
     results = []; loc_id = lokasi.lower().strip().replace(" ", "_")
@@ -320,7 +326,6 @@ if check_password_per_device():
             if angka_from_file: st.session_state.angka_list = angka_from_file; st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
         except FileNotFoundError: st.error(f"File tidak ditemukan: '{file_path}'. Pastikan file ada di dalam folder '{folder_data}'.")
 
-    # --- PERUBAHAN BARU DI SINI ---
     with st.expander("✏️ Edit Data Angka Manual", expanded=True):
         riwayat_text = st.text_area("1 angka per baris:", "\n".join(st.session_state.angka_list), height=300, key="manual_data_input")
         if riwayat_text != "\n".join(st.session_state.angka_list):
@@ -337,7 +342,6 @@ if check_password_per_device():
             
             st.session_state.angka_list = processed_angka
             st.rerun()
-    # --- AKHIR PERUBAHAN BARU ---
 
     df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
     tab_list = ["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"]
