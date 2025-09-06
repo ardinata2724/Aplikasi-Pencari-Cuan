@@ -352,7 +352,11 @@ if check_password_per_device():
                             if data["ws"] is not None: st.info(f"💡 **WS terbaik yang ditemukan: {data['ws']}**")
                         else: st.warning("Tidak ada hasil yang valid untuk rentang WS ini.")
         if st.session_state.scan_queue:
-            st.info(f"Antrian Berikutnya: {' ➡️ '.join(f'**{j.replace('_', ' ').upper()}**' for j in st.session_state.scan_queue)}")
+            # PERBAIKAN DIMULAI DI SINI
+            scan_items = [f"**{job.replace('_', ' ').upper()}**" for job in st.session_state.scan_queue]
+            queue_text = ' ➡️ '.join(scan_items)
+            st.info(f"Antrian Berikutnya: {queue_text}")
+            # PERBAIKAN SELESAI
         if not st.session_state.current_scan_job and st.session_state.scan_queue:
             st.session_state.current_scan_job = st.session_state.scan_queue.pop(0); st.rerun()
         if st.session_state.current_scan_job:
@@ -398,3 +402,4 @@ if check_password_per_device():
                         if st.button("Logout Paksa", key=f"logout_{password}"):
                             del device_log[password]; save_device_log(device_log); st.success(f"Sesi untuk password '{password}' berhasil dihapus!"); time.sleep(1); st.rerun()
                 st.markdown("---")
+}
