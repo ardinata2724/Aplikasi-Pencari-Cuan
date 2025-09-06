@@ -320,10 +320,24 @@ if check_password_per_device():
             if angka_from_file: st.session_state.angka_list = angka_from_file; st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
         except FileNotFoundError: st.error(f"File tidak ditemukan: '{file_path}'. Pastikan file ada di dalam folder '{folder_data}'.")
 
+    # --- PERUBAHAN BARU DI SINI ---
     with st.expander("✏️ Edit Data Angka Manual", expanded=True):
         riwayat_text = st.text_area("1 angka per baris:", "\n".join(st.session_state.angka_list), height=300, key="manual_data_input")
         if riwayat_text != "\n".join(st.session_state.angka_list):
-            st.session_state.angka_list = [line.strip()[:4] for line in riwayat_text.splitlines() if line.strip() and line.strip()[:4].isdigit()]; st.rerun()
+            processed_angka = []
+            for line in riwayat_text.splitlines():
+                if not line.strip():
+                    continue
+                
+                parts = line.strip().split()
+                last_part = parts[-1]
+                
+                if len(last_part) == 4 and last_part.isdigit():
+                    processed_angka.append(last_part)
+            
+            st.session_state.angka_list = processed_angka
+            st.rerun()
+    # --- AKHIR PERUBAHAN BARU ---
 
     df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
     tab_list = ["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"]
@@ -357,9 +371,7 @@ if check_password_per_device():
 
     with tabs[0]: # Scan Window Size
         st.subheader("Pencarian Window Size (WS) Optimal per Kategori"); scan_cols = st.columns(2)
-        # --- PERUBAHAN BARU DI SINI ---
-        min_ws = scan_cols[0].number_input("Min WS", 3, 99, 5) # Nilai minimal diubah dari 1 ke 3
-        # --- AKHIR PERUBAHAN BARU ---
+        min_ws = scan_cols[0].number_input("Min WS", 3, 99, 5) 
         max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 100, 31)
         if st.button("❌ Hapus Hasil Scan"): st.session_state.scan_outputs = {}; st.rerun()
         st.divider()
