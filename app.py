@@ -249,7 +249,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:]) * 100
                 top_indices = np.argsort(preds[-1])[::-1][:k]
                 
-                # --- PERUBAHAN BARU DIMULAI DI SINI ---
                 sisa_angka_str = ""
                 if pt == "shio":
                     pred_str = ", ".join(map(str, top_indices + 1))
@@ -257,7 +256,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                     predicted_items = set(top_indices + 1)
                     missing_items = sorted(list(all_items - predicted_items))
                     sisa_angka_str = ", ".join(map(str, missing_items))
-                else: # Untuk Digit, Jumlah, dan BBFS
+                else:
                     pred_str = ", ".join(map(str, top_indices))
                     all_items = set(range(10))
                     predicted_items = set(top_indices)
@@ -266,7 +265,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 
                 score = (evals[1] * 0.7) + (avg_conf / 100 * 0.3) if pt == 'multilabel' else (evals[1] * 0.2) + (evals[2] * 0.5) + (avg_conf / 100 * 0.3)
                 table_data.append((ws, pred_str, sisa_angka_str))
-                # --- AKHIR PERUBAHAN BARU ---
 
             if score > best_score: best_score, best_ws = score, ws
         except Exception as e:
@@ -359,7 +357,10 @@ if check_password_per_device():
 
     with tabs[0]: # Scan Window Size
         st.subheader("Pencarian Window Size (WS) Optimal per Kategori"); scan_cols = st.columns(2)
-        min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5); max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
+        # --- PERUBAHAN BARU DI SINI ---
+        min_ws = scan_cols[0].number_input("Min WS", 3, 99, 5) # Nilai minimal diubah dari 1 ke 3
+        # --- AKHIR PERUBAHAN BARU ---
+        max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 100, 31)
         if st.button("❌ Hapus Hasil Scan"): st.session_state.scan_outputs = {}; st.rerun()
         st.divider()
         def create_scan_button(label, container):
