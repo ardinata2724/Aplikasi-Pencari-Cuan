@@ -174,7 +174,6 @@ def tf_preprocess_data_for_jalur(df, window_size, target_position):
         targets.append(to_categorical(shio_to_jalur[shio] - 1, num_classes=3))
     return np.array(sequences), np.array(targets)
 
-# --- PERUBAHAN BARU DI SINI ---
 def build_tf_model(input_len, model_type, problem_type, num_classes):
     from tensorflow.keras.models import Model; from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Dense, LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
     inputs = Input(shape=(input_len,)); x = Embedding(10, 64)(inputs); x = PositionalEncoding()(x)
@@ -182,13 +181,10 @@ def build_tf_model(input_len, model_type, problem_type, num_classes):
         attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x); x = LayerNormalization()(x + attn)
     else: 
         x = Bidirectional(LSTM(128, return_sequences=True))(x)
-        # Dropout(0.3) dihapus
     x = GlobalAveragePooling1D()(x)
     x = Dense(128, activation='relu')(x)
-    # Dropout(0.2) dihapus
     outputs, loss = (Dense(num_classes, activation='sigmoid')(x), "binary_crossentropy") if problem_type == "multilabel" else (Dense(num_classes, activation='softmax')(x), "categorical_crossentropy")
     return Model(inputs, outputs), loss
-# --- AKHIR PERUBAHAN BARU ---
 
 def top_n_model(df, lokasi, window_dict, model_type, top_n):
     results = []; loc_id = lokasi.lower().strip().replace(" ", "_")
@@ -212,6 +208,7 @@ def _train_single_model_for_ws(X_train, y_train, X_val, y_val, model_params):
     model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
     return model.evaluate(X_val, y_val, verbose=0), model.predict(X_val, verbose=0)
 
+# --- PERUBAHAN BARU DI SINI ---
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
     from sklearn.model_selection import train_test_split
     best_ws, best_score, table_data = None, -1, []
@@ -219,7 +216,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
-        cols = ["Window Size", "Prediksi", "Angka Jalur"]
+        cols = ["Window Size", "Prediksi", "Angka Jalur", "Jalur Mati"]
     elif label in BBFS_LABELS:
         pt, k, nc = "multilabel", top_n, 10
         cols = ["Window Size", f"Top-{k}", "Sisa Angka"]
@@ -249,8 +246,14 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 top_indices = np.argsort(preds[-1])[::-1][:2]
                 pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
                 angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
+                
+                all_jalur = {1, 2, 3}
+                predicted_jalur = {top_indices[0] + 1, top_indices[1] + 1}
+                missing_jalur_num = (all_jalur - predicted_jalur).pop()
+                sisa_jalur_str = f"Jalur {missing_jalur_num} => {JALUR_ANGKA_MAP[missing_jalur_num]}"
+                
                 score = (evals[1] * 0.3) + (evals[2] * 0.7)
-                table_data.append((ws, pred_str, angka_jalur_str))
+                table_data.append((ws, pred_str, angka_jalur_str, sisa_jalur_str))
             else:
                 avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:]) * 100
                 top_indices = np.argsort(preds[-1])[::-1][:k]
@@ -277,7 +280,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             st.warning(f"Gagal di WS={ws}: {e}"); st.code(traceback.format_exc()); continue
     bar.empty()
     return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
-
+# --- AKHIR PERUBAHAN BARU ---
 
 def train_and_save_model(df, lokasi, window_dict, model_type):
     from sklearn.model_selection import train_test_split; from tensorflow.keras.callbacks import EarlyStopping
@@ -414,7 +417,7 @@ if check_password_per_device():
                 st.error(f"Data tidak cukup untuk scan {label.upper()}. Tugas dibatalkan.")
                 st.session_state.current_scan_job = None; time.sleep(2); st.rerun()
             else:
-                st.warning(f"⏳ Sedang menjalankan scan untuk **{label.replace('_', ' ').upper()}**...")
+                st.warning(f"⏳ Sedang menjalankan scan untuk **{label.replace('_', ' ').upper()}****...")
                 best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit, jumlah_digit_shio)
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}; st.session_state.current_scan_job = None; st.rerun()
 
