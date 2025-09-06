@@ -211,20 +211,18 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     best_ws, best_score, table_data = None, -1, []
     is_jalur_scan = label in JALUR_LABELS
     
-    # --- PERBAIKAN DIMULAI DI SINI ---
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
         cols = ["Window Size", "Prediksi", "Angka Jalur"]
     elif label in BBFS_LABELS:
         pt, k, nc = "multilabel", top_n, 10
-        cols = ["Window Size", f"Top-{k}"]
+        cols = ["Window Size", f"Top-{k}", "Sisa Angka"]
     elif label in SHIO_LABELS:
         pt, k, nc = "shio", top_n_shio, 12
-        cols = ["Window Size", f"Top-{k}"]
+        cols = ["Window Size", f"Top-{k}", "Sisa Angka"]
     else:
         pt, k, nc = "multiclass", top_n, 10
-        cols = ["Window Size", f"Top-{k}"]
-    # --- AKHIR PERBAIKAN ---
+        cols = ["Window Size", f"Top-{k}", "Sisa Angka"]
 
     bar = st.progress(0, text=f"Memulai Scan {label.upper()}... [0%]"); total_ws = (max_ws - min_ws) + 1
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
@@ -240,20 +238,42 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
             model_params = {'input_len': X.shape[1], 'model_type': model_type, 'problem_type': 'multiclass' if is_jalur_scan else pt, 'num_classes': nc, 'k': k}
             evals, preds = _train_single_model_for_ws(X_train, y_train, X_val, y_val, model_params)
+            
             if is_jalur_scan:
-                top_indices = np.argsort(preds[-1])[::-1][:2]; pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
+                top_indices = np.argsort(preds[-1])[::-1][:2]
+                pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
                 angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
-                score = (evals[1] * 0.3) + (evals[2] * 0.7); table_data.append((ws, pred_str, angka_jalur_str))
+                score = (evals[1] * 0.3) + (evals[2] * 0.7)
+                table_data.append((ws, pred_str, angka_jalur_str))
             else:
-                avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:]) * 100; top_indices = np.argsort(preds[-1])[::-1][:k]
-                pred_str = ", ".join(map(str, top_indices + 1)) if pt == "shio" else ", ".join(map(str, top_indices))
+                avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:]) * 100
+                top_indices = np.argsort(preds[-1])[::-1][:k]
+                
+                # --- PERUBAHAN BARU DIMULAI DI SINI ---
+                sisa_angka_str = ""
+                if pt == "shio":
+                    pred_str = ", ".join(map(str, top_indices + 1))
+                    all_items = set(range(1, 13))
+                    predicted_items = set(top_indices + 1)
+                    missing_items = sorted(list(all_items - predicted_items))
+                    sisa_angka_str = ", ".join(map(str, missing_items))
+                else: # Untuk Digit, Jumlah, dan BBFS
+                    pred_str = ", ".join(map(str, top_indices))
+                    all_items = set(range(10))
+                    predicted_items = set(top_indices)
+                    missing_items = sorted(list(all_items - predicted_items))
+                    sisa_angka_str = ", ".join(map(str, missing_items))
+                
                 score = (evals[1] * 0.7) + (avg_conf / 100 * 0.3) if pt == 'multilabel' else (evals[1] * 0.2) + (evals[2] * 0.5) + (avg_conf / 100 * 0.3)
-                table_data.append((ws, pred_str))
+                table_data.append((ws, pred_str, sisa_angka_str))
+                # --- AKHIR PERUBAHAN BARU ---
+
             if score > best_score: best_score, best_ws = score, ws
         except Exception as e:
             st.warning(f"Gagal di WS={ws}: {e}"); st.code(traceback.format_exc()); continue
     bar.empty()
     return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
+
 
 def train_and_save_model(df, lokasi, window_dict, model_type):
     from sklearn.model_selection import train_test_split; from tensorflow.keras.callbacks import EarlyStopping
