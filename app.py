@@ -338,7 +338,9 @@ if check_password_per_device():
         scan_labels = [DIGIT_LABELS, JUMLAH_LABELS, BBFS_LABELS, SHIO_LABELS, JALUR_LABELS]
         for i, tab in enumerate(category_tabs):
             with tab:
-                cols = st.columns(len(scan_labels[i])); [create_scan_button(label, col) for label, col in zip(scan_labels[i], cols)]
+                cols = st.columns(len(scan_labels[i]))
+                for label, col in zip(scan_labels[i], cols):
+                    create_scan_button(label, col)
         st.divider()
         if st.session_state.scan_outputs:
             st.markdown("---"); st.subheader("✅ Hasil Scan Selesai")
@@ -352,11 +354,9 @@ if check_password_per_device():
                             if data["ws"] is not None: st.info(f"💡 **WS terbaik yang ditemukan: {data['ws']}**")
                         else: st.warning("Tidak ada hasil yang valid untuk rentang WS ini.")
         if st.session_state.scan_queue:
-            # PERBAIKAN DIMULAI DI SINI
             scan_items = [f"**{job.replace('_', ' ').upper()}**" for job in st.session_state.scan_queue]
             queue_text = ' ➡️ '.join(scan_items)
             st.info(f"Antrian Berikutnya: {queue_text}")
-            # PERBAIKAN SELESAI
         if not st.session_state.current_scan_job and st.session_state.scan_queue:
             st.session_state.current_scan_job = st.session_state.scan_queue.pop(0); st.rerun()
         if st.session_state.current_scan_job:
